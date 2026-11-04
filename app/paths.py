@@ -32,6 +32,12 @@ def config_path() -> Path:
     return data_dir() / "config.json"
 
 
+def thumbs_dir() -> Path:
+    path = data_dir() / "thumbs"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def log_path() -> Path:
     return data_dir() / "clipnest.log"
 

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QSystemTrayIcon, QWidget
 from app import autostart, paths
 from app.config import Config
 from app.single_instance import SingleInstance
-from core import filters
+from core import filters, thumbnails
 from core.clipboard import ClipboardWatcher
 from core.hotkey import HotkeyManager
 from core.models import KIND_IMAGE, KIND_TEXT, ClipItem
@@ -87,6 +87,7 @@ class Application:
         self._prune()
         # 换过安装目录之后注册表里的旧路径会失效，启动时顺手校正
         autostart.repair()
+        thumbnails.prune(paths.thumbs_dir(), 30)
 
     # ---------- 事件 ----------
 

@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app import paths
+from core import thumbnails
 from core.models import KIND_FILES, KIND_IMAGE, ClipItem
 from ui import theme
 
@@ -98,10 +100,14 @@ class PreviewPane(QWidget):
     def _load_pixmap(self, item: ClipItem) -> QPixmap | None:
         if not item.image_path:
             return None
-        path = Path(item.image_path)
-        if not path.exists():
+        source = Path(item.image_path)
+        if not source.exists():
             return None
-        pixmap = QPixmap(str(path))
+        # 走缓存，切成大图时不用每回都全量解码
+        cached = thumbnails.ensure(
+            item.image_path, item.content_hash, paths.thumbs_dir()
+        )
+        pixmap = QPixmap(str(cached or source))
         return pixmap if not pixmap.isNull() else None
 
     def _render_pixmap(self) -> None:
