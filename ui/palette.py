@@ -5,12 +5,14 @@ from __future__ import annotations
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPainterPath, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListView,
+    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -131,6 +133,7 @@ class PaletteWindow(QWidget):
         self._search.textChanged.connect(self._search_timer.start)
         self._search.nav.connect(self._on_nav)
         layout.addWidget(self._search)
+        layout.addWidget(self._build_filters(pal))
 
         body = QHBoxLayout()
         body.setSpacing(12)
@@ -179,11 +182,53 @@ class PaletteWindow(QWidget):
         self._footer.setStyleSheet(f"color: {pal.text_faint};")
         layout.addWidget(self._footer)
 
+    def _build_filters(self, pal) -> QWidget:
+        bar = QWidget(self._card)
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(2, 0, 2, 0)
+        row.setSpacing(4)
+
+        self._filter_bar = bar
+        self._kind_filter = ""
+        self._filter_group = QButtonGroup(self)
+        self._filter_group.setExclusive(True)
+
+        options = (("全部", ""), ("文本", "text"), ("图片", "image"), ("文件", "files"))
+        for index, (label, kind) in enumerate(options):
+            button = QPushButton(label, bar)
+            button.setCheckable(True)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setProperty("kind", kind)
+            if index == 0:
+                button.setChecked(True)
+            self._filter_group.addButton(button, index)
+            row.addWidget(button)
+        row.addStretch(1)
+
+        bar.setStyleSheet(self._filter_style(pal))
+        self._filter_group.idClicked.connect(self._on_filter_changed)
+        return bar
+
+    def _filter_style(self, pal) -> str:
+        return (
+            f"QPushButton {{ background: transparent; color: {pal.text_faint};"
+            f" border: none; padding: 3px 11px; border-radius: 9px; font-size: 11px; }}"
+            f"QPushButton:hover {{ color: {pal.text}; }}"
+            f"QPushButton:checked {{ background: {pal.search_bg}; color: {pal.text}; }}"
+        )
+
+    def _on_filter_changed(self, button_id: int) -> None:
+        button = self._filter_group.button(button_id)
+        self._kind_filter = str(button.property("kind") or "") if button else ""
+        self.reload()
+
     # ---------- 数据 ----------
 
     def reload(self) -> None:
         query = self._search.text().strip()
-        self._items = self._repo.list(query=query, limit=self._config.max_items)
+        self._items = self._repo.list(
+            query=query, kind=self._kind_filter, limit=self._config.max_items
+        )
         self._model.clear()
         for item in self._items:
             row = QStandardItem()
@@ -191,6 +236,9 @@ class PaletteWindow(QWidget):
             row.setEditable(False)
             self._model.appendRow(row)
 
+        self._empty.setText(
+            "没有匹配的记录。" if (query or self._kind_filter) else "还没有记录。复制点什么试试。"
+        )
         self._stack.setCurrentWidget(self._list if self._items else self._empty)
         if self._items:
             self._list.setCurrentIndex(self._model.index(0, 0))
@@ -322,4 +370,5 @@ class PaletteWindow(QWidget):
         )
         self._empty.setStyleSheet(f"color: {pal.text_faint};")
         self._footer.setStyleSheet(f"color: {pal.text_faint};")
+        self._filter_bar.setStyleSheet(self._filter_style(pal))
         self._list.viewport().update()

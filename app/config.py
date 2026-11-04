@@ -16,7 +16,7 @@ class Config:
     paused: bool = False
     strict_secret_filter: bool = False
     window_width: int = 800
-    window_height: int = 480
+    window_height: int = 520
 
     @classmethod
     def load(cls) -> Config:
