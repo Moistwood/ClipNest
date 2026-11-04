@@ -170,3 +170,40 @@ class Repository:
 
     def count(self) -> int:
         return int(self._conn.execute("SELECT count(*) FROM items").fetchone()[0])
+
+    def summary(self) -> dict[str, object]:
+        """统计用的一次性聚合，别在循环里调用。"""
+        row = self._conn.execute(
+            """SELECT count(*)               AS total,
+                      coalesce(sum(size), 0)  AS bytes_total,
+                      coalesce(sum(use_count), 0) AS uses,
+                      min(created_at)         AS first_at,
+                      max(last_used_at)       AS last_at,
+                      sum(pinned)             AS pinned
+               FROM items"""
+        ).fetchone()
+
+        kinds = {
+            r["kind"]: r["n"]
+            for r in self._conn.execute(
+                "SELECT kind, count(*) AS n FROM items GROUP BY kind"
+            )
+        }
+        sources = [
+            (r["source_app"], r["n"])
+            for r in self._conn.execute(
+                """SELECT source_app, count(*) AS n FROM items
+                   WHERE source_app <> ''
+                   GROUP BY source_app ORDER BY n DESC LIMIT 5"""
+            )
+        ]
+        return {
+            "total": int(row["total"] or 0),
+            "bytes_total": int(row["bytes_total"] or 0),
+            "uses": int(row["uses"] or 0),
+            "first_at": float(row["first_at"] or 0),
+            "last_at": float(row["last_at"] or 0),
+            "pinned": int(row["pinned"] or 0),
+            "kinds": kinds,
+            "sources": sources,
+        }

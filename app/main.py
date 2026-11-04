@@ -19,9 +19,11 @@ from core.clipboard import ClipboardWatcher
 from core.hotkey import HotkeyManager
 from core.models import KIND_IMAGE, KIND_TEXT, ClipItem
 from core.repository import Repository
+from core.stats import collect as collect_stats
 from ui import theme
 from ui.palette import PaletteWindow
 from ui.settings_dialog import SettingsDialog
+from ui.stats_dialog import StatsDialog
 from ui.tray import TrayIcon
 
 
@@ -57,6 +59,7 @@ class Application:
 
         self.tray.show_requested.connect(self.palette.popup)
         self.tray.settings_requested.connect(self._open_settings)
+        self.tray.stats_requested.connect(self._open_stats)
         self.tray.pause_toggled.connect(self._on_pause)
         self.tray.clear_requested.connect(self._on_clear)
         self.tray.quit_requested.connect(self._on_quit)
@@ -149,6 +152,9 @@ class Application:
             self._prune()
         if self.palette.isVisible():
             self.palette.reload()
+
+    def _open_stats(self) -> None:
+        StatsDialog(collect_stats(self.repo)).exec()
 
     def _on_color_scheme(self, _scheme) -> None:
         self.palette.refresh_theme()
