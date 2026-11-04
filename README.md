@@ -15,6 +15,9 @@
 - 支持搜索，中文可直接搜；重复内容自动去重并置顶
 - 密码管理器标记为「不要记录」的内容会被自动跳过
 - 托盘常驻，可随时暂停监听
+- 设置面板里能改热键、条数上限、保留天数，改完立即生效
+- 使用统计：记录条数、占用空间、类型占比、最常复制的程序
+- 历史记录可以导出成 JSON，换机器后再导入回来
 
 ## 快捷键
 
@@ -41,7 +44,7 @@ Windows 自带的 Win+V 没有搜索、没有固定、条数少、重启就丢�
 ## 本地运行
 
 ```bash
-git clone https://github.com/Moistwood/ClipNest.git
+git clone <本项目仓库地址>
 cd ClipNest
 python -m venv .venv
 .venv\Scripts\activate
@@ -49,7 +52,7 @@ pip install -r requirements.txt
 python run.py
 ```
 
-启动后程序驻留托盘，按 `Ctrl+Alt+V` 呼出面板。配置文件在 `%APPDATA%\ClipNest\config.json`，改完热键需要重启生效。
+启动后程序驻留托盘，按 `Ctrl+Alt+V` 呼出面板。配置文件在 `%APPDATA%\ClipNest\config.json`，也可以在托盘的「设置…」里改，改完立即生效。
 
 ## 测试
 
@@ -81,6 +84,19 @@ python -m nuitka --standalone --enable-plugin=pyside6 ^
 ## 隐私
 
 ClipNest 没有任何网络代码。你可以用防火墙或者抓包工具验证这一点，这是这个项目唯一重要的承诺。如果哪天你发现它有联网行为，那一定是被篡改了。
+
+数据目录结构：
+
+```
+%APPDATA%\ClipNest\
+├── history.db      记录与索引
+├── config.json     热键、上限等设置
+├── blobs\          复制过的原图
+├── thumbs\         预览用的缩略图缓存
+└── clipnest.log    崩溃日志
+```
+
+卸载时直接删掉这个目录，不留任何残留。
 
 ## 协议
 
