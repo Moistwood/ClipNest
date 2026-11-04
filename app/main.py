@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import faulthandler
 import sys
+from dataclasses import fields
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtNetwork import QLocalServer
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QWidget
+from PySide6.QtWidgets import QApplication, QDialog, QSystemTrayIcon, QWidget
 
-from app import paths
+from app import autostart, paths
 from app.config import Config
 from app.single_instance import SingleInstance
 from core import filters
@@ -20,6 +21,7 @@ from core.models import KIND_IMAGE, KIND_TEXT, ClipItem
 from core.repository import Repository
 from ui import theme
 from ui.palette import PaletteWindow
+from ui.settings_dialog import SettingsDialog
 from ui.tray import TrayIcon
 
 
@@ -54,6 +56,7 @@ class Application:
         self.hotkey.activated.connect(self.palette.popup)
 
         self.tray.show_requested.connect(self.palette.popup)
+        self.tray.settings_requested.connect(self._open_settings)
         self.tray.pause_toggled.connect(self._on_pause)
         self.tray.clear_requested.connect(self._on_clear)
         self.tray.quit_requested.connect(self._on_quit)
@@ -79,6 +82,8 @@ class Application:
             self.tray.setToolTip(f"{paths.APP_NAME} · 正在记录 · {self.config.hotkey}")
 
         self._prune()
+        # 换过安装目录之后注册表里的旧路径会失效，启动时顺手校正
+        autostart.repair()
 
     # ---------- 事件 ----------
 
@@ -115,20 +120,53 @@ class Application:
         if self.palette.isVisible():
             self.palette.reload()
 
+    def _open_settings(self) -> None:
+        dialog = SettingsDialog(self.config)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        changed = dialog.accepted_changes()
+        incoming = dialog.result_config()
+
+        if "hotkey" in changed:
+            combo = str(changed["hotkey"])
+            if not self.hotkey.register(combo):
+                self.hotkey.register(self.config.hotkey)
+                incoming.hotkey = self.config.hotkey
+                self._warn_hotkey(combo)
+            else:
+                self.tray.setToolTip(f"{paths.APP_NAME} · 正在记录 · {combo}")
+
+        if "autostart" in changed and not autostart.set_enabled(bool(changed["autostart"])):
+            self._notify("开机自启设置失败", "写入注册表被拒绝，可以换用安装版再试。")
+
+        # 原地覆盖，浮层和托盘持有的还是同一个 Config 对象
+        for field in fields(Config):
+            setattr(self.config, field.name, getattr(incoming, field.name))
+        self.config.save()
+
+        if changed.get("prune"):
+            self._prune()
+        if self.palette.isVisible():
+            self.palette.reload()
+
     def _on_color_scheme(self, _scheme) -> None:
         self.palette.refresh_theme()
         self.tray.setIcon(theme.make_icon(not self.config.paused))
 
-    def _warn_hotkey(self, combo: str) -> None:
-        self.tray.setToolTip(f"{paths.APP_NAME} · 热键 {combo} 注册失败")
+    def _notify(self, title: str, message: str) -> None:
         if QSystemTrayIcon.supportsMessages():
             self.tray.showMessage(
-                "热键被占用",
-                f"{combo} 已被其他程序占用，请修改配置后重启。\n"
-                f"配置文件：{paths.config_path()}",
-                QSystemTrayIcon.MessageIcon.Warning,
-                6000,
+                title, message, QSystemTrayIcon.MessageIcon.Warning, 6000
             )
+
+    def _warn_hotkey(self, combo: str) -> None:
+        self.tray.setToolTip(f"{paths.APP_NAME} · 热键 {combo} 注册失败")
+        self._notify(
+            "热键被占用",
+            f"{combo} 已被其他程序占用，请修改配置后重启。\n"
+            f"配置文件：{paths.config_path()}",
+        )
 
     def _drain_and_show(self, server: QLocalServer) -> None:
         """第二个实例只是来敲门，把管道读干净再弹面板。"""
