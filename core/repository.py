@@ -32,12 +32,20 @@ CREATE INDEX IF NOT EXISTS idx_items_kind   ON items(kind, last_used_at DESC);
 
 UPSERT = """
 INSERT INTO items (kind, content_hash, preview, text_body, image_path, width, height,
-                   files_json, source_app, size, use_count, created_at, last_used_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                   files_json, source_app, size, pinned, use_count, created_at, last_used_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
 ON CONFLICT(content_hash) DO UPDATE SET
     last_used_at = excluded.last_used_at,
     use_count    = use_count + 1,
     preview      = excluded.preview
+RETURNING id
+"""
+
+INSERT_IF_ABSENT = """
+INSERT INTO items (kind, content_hash, preview, text_body, image_path, width, height,
+                   files_json, source_app, size, pinned, use_count, created_at, last_used_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(content_hash) DO NOTHING
 RETURNING id
 """
 
@@ -70,6 +78,7 @@ class Repository:
                 "\n".join(item.files),
                 item.source_app,
                 item.size,
+                1 if item.pinned else 0,
                 item.created_at or now,
                 now,
             ),
@@ -77,6 +86,40 @@ class Repository:
         row = cursor.fetchone()
         self._conn.commit()
         return int(row[0]) if row else 0
+
+    def insert_if_absent(self, item: ClipItem) -> int:
+        """导入用。已存在的哈希原样跳过，不涨 use_count。"""
+        cursor = self._conn.execute(
+            INSERT_IF_ABSENT,
+            (
+                item.kind,
+                item.content_hash,
+                item.preview,
+                item.text,
+                item.image_path,
+                item.width,
+                item.height,
+                "\n".join(item.files),
+                item.source_app,
+                item.size,
+                1 if item.pinned else 0,
+                item.use_count,
+                item.created_at,
+                item.created_at,
+            ),
+        )
+        row = cursor.fetchone()
+        self._conn.commit()
+        return int(row[0]) if row else 0
+
+    def all_items(self, limit: int = 0) -> list[ClipItem]:
+        sql = "SELECT * FROM items ORDER BY created_at"
+        if limit > 0:
+            sql += " LIMIT ?"
+            rows = self._conn.execute(sql, (limit,))
+        else:
+            rows = self._conn.execute(sql)
+        return [self._to_item(row) for row in rows]
 
     def _to_item(self, row: sqlite3.Row) -> ClipItem:
         return ClipItem(

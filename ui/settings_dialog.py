@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
+import time
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
@@ -10,10 +12,14 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
     QKeySequenceEdit,
     QLabel,
+    QMessageBox,
+    QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -21,14 +27,19 @@ from PySide6.QtWidgets import (
 
 from app import autostart
 from app.config import Config
+from core.exporter import ExportError, export_to_file, import_from_file
+from core.repository import Repository
 from ui import theme
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, config: Config, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, config: Config, repo: Repository | None = None, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self._config = dataclasses.replace(config)
         self._original = dataclasses.replace(config)
+        self._repo = repo
         self._ui = autostart.is_enabled()
 
         self.setWindowTitle("设置")
@@ -48,6 +59,8 @@ class SettingsDialog(QDialog):
 
         root.addWidget(self._build_record_group())
         root.addWidget(self._build_app_group())
+        if self._repo is not None:
+            root.addWidget(self._build_data_group())
 
         hint = QLabel("热键修改后立即生效，若与其它软件冲突会保留原热键。")
         hint.setWordWrap(True)
@@ -103,6 +116,62 @@ class SettingsDialog(QDialog):
         self._autostart.setChecked(self._ui)
         form.addRow("", self._autostart)
         return group
+
+    def _build_data_group(self) -> QGroupBox:
+        group = QGroupBox("数据")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(14, 16, 14, 12)
+        layout.setSpacing(8)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        export_button = QPushButton("导出为 JSON")
+        import_button = QPushButton("从 JSON 导入")
+        export_button.clicked.connect(self._on_export)
+        import_button.clicked.connect(self._on_import)
+        buttons.addWidget(export_button)
+        buttons.addWidget(import_button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+
+        hint = QLabel("导入时按内容去重，重复的条目直接跳过，不会改动已有记录。")
+        hint.setObjectName("hint")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        return group
+
+    def _on_export(self) -> None:
+        if self._repo is None:
+            return
+        suggested = time.strftime("clipnest-%Y%m%d-%H%M.json")
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "导出历史记录", suggested, "JSON 文件 (*.json)"
+        )
+        if not path:
+            return
+        try:
+            count = export_to_file(self._repo, Path(path))
+        except ExportError as exc:
+            QMessageBox.warning(self, "导出失败", str(exc))
+            return
+        QMessageBox.information(self, "导出完成", f"共导出 {count} 条记录。")
+
+    def _on_import(self) -> None:
+        if self._repo is None:
+            return
+        path, _filter = QFileDialog.getOpenFileName(
+            self, "导入历史记录", "", "JSON 文件 (*.json)"
+        )
+        if not path:
+            return
+        try:
+            added, skipped = import_from_file(self._repo, Path(path))
+        except ExportError as exc:
+            QMessageBox.warning(self, "导入失败", str(exc))
+            return
+        QMessageBox.information(
+            self, "导入完成", f"新增 {added} 条，跳过重复 {skipped} 条。"
+        )
 
     def _apply_theme(self) -> None:
         pal = theme.current()

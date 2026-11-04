@@ -124,8 +124,11 @@ class Application:
             self.palette.reload()
 
     def _open_settings(self) -> None:
-        dialog = SettingsDialog(self.config)
+        dialog = SettingsDialog(self.config, self.repo)
         if dialog.exec() != QDialog.DialogCode.Accepted:
+            # 导入在对话框里就写库了，取消也得让面板看到新数据
+            if self.palette.isVisible():
+                self.palette.reload()
             return
 
         changed = dialog.accepted_changes()
