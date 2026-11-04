@@ -179,6 +179,25 @@ def global_bytes(handle: int) -> bytes:
         kernel32.GlobalUnlock(handle)
 
 
+def foreground_window() -> int:
+    """当前前台窗口句柄，没有则返回 0。"""
+    return int(user32.GetForegroundWindow() or 0)
+
+
+def foreground_process_id() -> int:
+    """当前前台窗口属于哪个进程，没有前台窗口时返回 0。
+
+    面板靠这个判断"用户是不是切走了"，比依赖 Qt 的焦点状态可靠：
+    焦点通常落在搜索框这种子控件上，父窗口收不到失焦事件。
+    """
+    hwnd = foreground_window()
+    if not hwnd:
+        return 0
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return int(pid.value)
+
+
 def process_name_from_window(hwnd: int) -> str:
     """从窗口句柄反查进程可执行文件名，失败返回空串。"""
     if not hwnd:

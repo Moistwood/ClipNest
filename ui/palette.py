@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, Qt, QTimer, Signal
+import time
+
+from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPainterPath, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -86,6 +88,7 @@ class PaletteWindow(QWidget):
         self._config = config
         self._prev_hwnd = 0
         self._items: list[ClipItem] = []
+        self._shown_at = 0.0
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -94,6 +97,12 @@ class PaletteWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(config.window_width, config.window_height)
+
+        # 置顶窗口必须自己负责消失。焦点在搜索框这类子控件上，
+        # 父窗口收不到失焦事件，所以除了 changeEvent 还要轮询前台进程兜底。
+        self._focus_watch = QTimer(self)
+        self._focus_watch.setInterval(250)
+        self._focus_watch.timeout.connect(self._drop_if_inactive)
 
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
@@ -328,13 +337,48 @@ class PaletteWindow(QWidget):
         super().focusOutEvent(event)
         QTimer.singleShot(140, self._maybe_hide)
 
+    def changeEvent(self, event) -> None:  # noqa: N802 (Qt 接口)
+        # 窗口从激活变成不激活，说明用户点了别处，这是最直接的信号
+        if event.type() == QEvent.Type.ActivationChange and not self.isActiveWindow():
+            QTimer.singleShot(140, self._maybe_hide)
+        super().changeEvent(event)
+
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt 接口)
+        super().showEvent(event)
+        self._shown_at = time.monotonic()
+        self._focus_watch.start()
+
+    def hideEvent(self, event) -> None:  # noqa: N802 (Qt 接口)
+        self._focus_watch.stop()
+        super().hideEvent(event)
+
+    def _holds_foreground(self) -> bool:
+        """前台窗口是不是自己。
+
+        比自己进程 ID 更严格：设置对话框、提示框也属于本进程，
+        但那时候面板应该让位。
+        """
+        return win32.foreground_window() == int(self.winId())
+
+    def _drop_if_inactive(self) -> None:
+        """前台换成别的窗口就收起面板。
+
+        刚弹出的前一瞬 activateWindow 还在路上，给 300ms 宽限期，
+        否则会在显示的同时把自己关掉。
+        """
+        if not self.isVisible():
+            return
+        if time.monotonic() - self._shown_at < 0.3:
+            return
+        if not self._holds_foreground():
+            self.hide()
+
     def _maybe_hide(self) -> None:
         if not self.isVisible():
             return
-        if self.rect().contains(self.mapFromGlobal(QCursor.pos())):
+        if self._holds_foreground():
             return
-        if not self.isActiveWindow():
-            self.hide()
+        self.hide()
 
     # ---------- 显示 ----------
 
