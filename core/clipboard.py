@@ -8,7 +8,7 @@ import struct
 import time
 from ctypes import wintypes
 
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, Signal
+from PySide6.QtCore import QAbstractNativeEventFilter, QBuffer, QByteArray, QIODevice, QObject, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
@@ -216,6 +216,17 @@ def _png_to_dib(png: bytes) -> bytes:
     return data[14:] if data[:2] == b"BM" else b""
 
 
+class _WatcherFilter(QAbstractNativeEventFilter):
+    """PySide6 只接受真正的 QAbstractNativeEventFilter 子类，鸭子类型不行。"""
+
+    def __init__(self, watcher: ClipboardWatcher) -> None:
+        super().__init__()
+        self._watcher = watcher
+
+    def nativeEventFilter(self, event_type, message):  # noqa: N802 (Qt 接口)
+        return self._watcher.handle_native(event_type, message)
+
+
 class ClipboardWatcher(QObject):
     """订阅 WM_CLIPBOARDUPDATE，把每次复制读成 ClipItem 发出去。"""
 
@@ -227,10 +238,13 @@ class ClipboardWatcher(QObject):
         self._active = False
         self._app = QApplication.instance()
         self._filter_installed = False
+        self._filter = _WatcherFilter(self)
+        self._last_hash = ""
+        self._last_time = 0.0
 
     def start(self) -> None:
         if not self._filter_installed and self._app is not None:
-            self._app.installNativeEventFilter(self)
+            self._app.installNativeEventFilter(self._filter)
             self._filter_installed = True
         if win32.user32.AddClipboardFormatListener(self._hwnd):
             self._active = True
@@ -246,7 +260,7 @@ class ClipboardWatcher(QObject):
         else:
             self.stop()
 
-    def nativeEventFilter(self, event_type, message):  # noqa: N802 (Qt 接口)
+    def handle_native(self, event_type, message):
         if bytes(event_type) in (b"windows_generic_MSG", b"windows_dispatcher_MSG"):
             try:
                 msg = wintypes.MSG.from_address(int(message))
@@ -264,5 +278,14 @@ class ClipboardWatcher(QObject):
             item = read_clipboard(self._hwnd)
         except OSError:
             return
-        if item is not None:
-            self.captured.emit(item)
+        if item is None:
+            return
+
+        # 一次复制会被系统连发多次 WM_CLIPBOARDUPDATE（实测抓到 9 次），
+        # 同内容短时间内只处理一次，否则会白白写库、把使用次数刷上天。
+        now = time.monotonic()
+        if item.content_hash == self._last_hash and now - self._last_time < 0.8:
+            return
+        self._last_hash = item.content_hash
+        self._last_time = now
+        self.captured.emit(item)

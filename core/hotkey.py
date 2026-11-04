@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ctypes import wintypes
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QAbstractNativeEventFilter, QObject, Signal
 from PySide6.QtWidgets import QApplication
 
 from core import win32
@@ -76,6 +76,15 @@ def _virtual_key(token: str) -> int | None:
     return None
 
 
+class _HotkeyFilter(QAbstractNativeEventFilter):
+    def __init__(self, manager: HotkeyManager) -> None:
+        super().__init__()
+        self._manager = manager
+
+    def nativeEventFilter(self, event_type, message):  # noqa: N802 (Qt 接口)
+        return self._manager.handle_native(event_type, message)
+
+
 class HotkeyManager(QObject):
     activated = Signal()
 
@@ -85,6 +94,7 @@ class HotkeyManager(QObject):
         self._combo = combo
         self._registered = False
         self._filter_installed = False
+        self._filter = _HotkeyFilter(self)
 
     @property
     def combo(self) -> str:
@@ -98,7 +108,7 @@ class HotkeyManager(QObject):
         if not self._filter_installed:
             app = QApplication.instance()
             if app is not None:
-                app.installNativeEventFilter(self)
+                app.installNativeEventFilter(self._filter)
                 self._filter_installed = True
 
         ok = win32.user32.RegisterHotKey(
@@ -114,7 +124,7 @@ class HotkeyManager(QObject):
             win32.user32.UnregisterHotKey(self._hwnd, HOTKEY_ID)
             self._registered = False
 
-    def nativeEventFilter(self, event_type, message):  # noqa: N802 (Qt 接口)
+    def handle_native(self, event_type, message):
         if bytes(event_type) in (b"windows_generic_MSG", b"windows_dispatcher_MSG"):
             try:
                 msg = wintypes.MSG.from_address(int(message))
