@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from html import escape
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -80,8 +81,14 @@ class PreviewPane(QWidget):
             return
 
         if item.kind == KIND_FILES:
-            body = "\n".join(item.files)
-            self._text.setPlainText(body)
+            blocks = []
+            for path in item.files:
+                pure = Path(path)
+                blocks.append(
+                    f"<p style='margin:0 0 8px 0'>{escape(pure.name)}"
+                    f"<br><span style='color:{self.pal.text_faint}'>{escape(str(pure.parent))}</span></p>"
+                )
+            self._text.setHtml("".join(blocks))
             self._stack.setCurrentWidget(self._text)
             return
 

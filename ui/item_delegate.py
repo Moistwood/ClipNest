@@ -62,7 +62,7 @@ class ClipDelegate(QStyledItemDelegate):
         painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, item.kind_label)
 
         text_left = badge_rect.right() + 12
-        text_right = rect.right() - 68
+        text_right = rect.right() - 84
 
         painter.setFont(self.font_title)
         painter.setPen(QColor(pal.text))
@@ -90,11 +90,9 @@ class ClipDelegate(QStyledItemDelegate):
 
         painter.setFont(self.font_time)
         painter.setPen(QColor(pal.text_faint))
-        meta = format_relative(item.created_at)
-        if item.pinned:
-            meta = "已固定 · " + meta
+        meta = "已固定" if item.pinned else format_relative(item.created_at)
         painter.drawText(
-            QRect(rect.right() - 66, rect.top() + 10, 62, 20),
+            QRect(rect.right() - 78, rect.top() + 10, 70, 20),
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
             meta,
         )

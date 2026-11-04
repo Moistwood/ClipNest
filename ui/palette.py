@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPainterPath
+from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPainterPath, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
@@ -12,8 +12,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListView,
     QStackedWidget,
-    QStandardItem,
-    QStandardItemModel,
     QVBoxLayout,
     QWidget,
 )
@@ -95,11 +93,12 @@ class PaletteWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(config.window_width, config.window_height)
 
-        self._build()
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(60)
         self._search_timer.timeout.connect(self.reload)
+
+        self._build()
 
     # ---------- 界面搭建 ----------
 
@@ -160,7 +159,7 @@ class PaletteWindow(QWidget):
         self._stack = QStackedWidget(self._card)
         self._stack.addWidget(self._list)
         self._stack.addWidget(self._empty)
-        body.addWidget(self._stack, 3)
+        body.addWidget(self._stack, 5)
 
         divider = QFrame(self._card)
         divider.setFrameShape(QFrame.Shape.VLine)
@@ -168,7 +167,7 @@ class PaletteWindow(QWidget):
         body.addWidget(divider)
 
         self._preview = PreviewPane(self._card)
-        body.addWidget(self._preview, 2)
+        body.addWidget(self._preview, 4)
 
         layout.addLayout(body, 1)
 

@@ -15,8 +15,8 @@ class Config:
     max_days: int = 7
     paused: bool = False
     strict_secret_filter: bool = False
-    window_width: int = 720
-    window_height: int = 460
+    window_width: int = 800
+    window_height: int = 480
 
     @classmethod
     def load(cls) -> Config:

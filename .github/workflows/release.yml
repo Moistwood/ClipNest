@@ -1,0 +1,48 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install nuitka
+
+      - name: Nuitka 打包
+        run: >
+          python -m nuitka
+          --standalone
+          --assume-yes-for-downloads
+          --enable-plugin=pyside6
+          --windows-console-mode=disable
+          --company-name=ClipNest
+          --product-name=ClipNest
+          --file-version=0.1.0
+          --product-version=0.1.0
+          --output-dir=build
+          run.py
+
+      - name: 压缩产物
+        run: Compress-Archive -Path build\run.dist\* -DestinationPath ClipNest-${{ github.ref_name }}-win64.zip
+
+      - name: 发布
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ClipNest-${{ github.ref_name }}-win64.zip
+          generate_release_notes: true
