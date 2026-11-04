@@ -33,8 +33,8 @@ jobs:
           --windows-console-mode=disable
           --company-name=ClipNest
           --product-name=ClipNest
-          --file-version=0.1.0.0
-          --product-version=0.1.0.0
+          --file-version=1.0.0.0
+          --product-version=1.0.0.0
           --output-dir=build
           run.py
 
