@@ -11,28 +11,23 @@ echo [2/4] 安装依赖
 call .venv\Scripts\activate.bat
 python -m pip install -q --upgrade pip
 python -m pip install -q -r requirements.txt
-python -m pip install -q nuitka==4.3.4 || goto :fail
+python -m pip install -q pyinstaller==6.22.3 || goto :fail
 
 echo [3/4] 打包
-python -m nuitka ^
-    --standalone ^
-    --assume-yes-for-downloads ^
-    --enable-plugin=pyside6 ^
-    --windows-console-mode=disable ^
-    --company-name=ClipNest ^
-    --product-name=ClipNest ^
-    --file-version=1.1.0.0 ^
-    --product-version=1.1.0.0 ^
-    --output-dir=build ^
+python -m PyInstaller ^
+    --noconfirm --clean --onedir --noconsole ^
+    --name ClipNest ^
+    --distpath dist ^
+    --workpath build\pyinstaller ^
+    --specpath build\pyinstaller ^
     run.py || goto :fail
 
 echo [4/4] 整理产物
-move /Y build\run.dist\run.exe build\run.dist\ClipNest.exe >nul || goto :fail
-copy /Y LICENSE build\run.dist\ >nul
-copy /Y README.md build\run.dist\ >nul
+copy /Y LICENSE dist\ClipNest\ >nul
+copy /Y README.md dist\ClipNest\ >nul
 
 echo.
-echo 完成：build\run.dist\ClipNest.exe（整个 run.dist 目录一起分发）
+echo 完成：dist\ClipNest\ClipNest.exe（整个 ClipNest 目录一起分发）
 exit /b 0
 
 :fail

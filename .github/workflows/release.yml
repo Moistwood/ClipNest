@@ -22,30 +22,25 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install nuitka==4.3.4
+          pip install pyinstaller==6.22.3
 
-      - name: Nuitka 打包
+      - name: 打包
         run: >
-          python -m nuitka
-          --standalone
-          --assume-yes-for-downloads
-          --enable-plugin=pyside6
-          --windows-console-mode=disable
-          --company-name=ClipNest
-          --product-name=ClipNest
-          --file-version=1.1.0.0
-          --product-version=1.1.0.0
-          --output-dir=build
+          python -m PyInstaller
+          --noconfirm --clean --onedir --noconsole
+          --name ClipNest
+          --distpath dist
+          --workpath build/pyinstaller
+          --specpath build/pyinstaller
           run.py
 
       - name: 整理产物
         run: |
-          Rename-Item build\run.dist\run.exe ClipNest.exe
-          Copy-Item LICENSE build\run.dist\
-          Copy-Item README.md build\run.dist\
+          Copy-Item LICENSE dist\ClipNest\
+          Copy-Item README.md dist\ClipNest\
 
       - name: 压缩产物
-        run: Compress-Archive -Path build\run.dist\* -DestinationPath ClipNest-${{ github.ref_name }}-win64.zip
+        run: Compress-Archive -Path dist\ClipNest\* -DestinationPath ClipNest-${{ github.ref_name }}-win64.zip
 
       - name: 发布
         uses: softprops/action-gh-release@v2

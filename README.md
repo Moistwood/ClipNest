@@ -98,15 +98,13 @@ python -m unittest discover -s tests -v
 
 ## 打包
 
-双击 `build.bat`：它会自动建虚拟环境、装依赖、编译，把主程序改名为 `ClipNest.exe`，并把 `LICENSE`、`README.md` 一起放进产物目录。手动编译则是：
+双击 `build.bat`：它会自动建虚拟环境、装依赖、用 PyInstaller 打包成 `ClipNest.exe`，并把 `LICENSE`、`README.md` 一起放进产物目录。手动打包则是：
 
 ```bash
-python -m nuitka --standalone --assume-yes-for-downloads ^
-  --enable-plugin=pyside6 --windows-console-mode=disable ^
-  --output-dir=build run.py
+python -m PyInstaller --noconfirm --onedir --noconsole --name ClipNest run.py
 ```
 
-产物在 `build\run.dist\`，整个目录一起分发（手编时主程序叫 `run.exe`）。推 `v*` 标签时 GitHub Actions 会自动打包并发布 Release。
+产物在 `dist\ClipNest\`，整个目录一起分发（单独拷 exe 出来会缺依赖）。推 `v*` 标签时 GitHub Actions 会自动打包并发布 Release。
 
 ## 已知限制
 
