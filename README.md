@@ -103,6 +103,8 @@ python -m nuitka --standalone --enable-plugin=pyside6 ^
 - 带有 `ExcludeClipboardContentFromMonitorProcessing` 标记的内容不会被记录，这是刻意行为。
 - 记录落盘和数据库写入在独立线程完成。清理过期记录、固定、删除这类低频写操作仍在主线程，两个 SQLite 连接靠 WAL 和 `busy_timeout` 错开。
 - 富文本只保存剪贴板上那份 HTML / RTF 片段，片段里引用的外部图片和样式不会跟着存；预览区一律显示纯文本，格式只在粘贴时还原。
+- **不做自动备份**，不额外占磁盘。收藏项不会被条数/天数清理，但也同样只存在这一份库里；真重要的内容请用「设置 → 数据 → 导出收藏夹」另存一份。
+- 启动时会对 `history.db` 做一次完整性检查。读不出来时把原文件连同 WAL/SHM 改名移到 `broken\`，再从空库重新开始，托盘会提示并写进 `clipnest.log`。坏文件只改名、不删除，可以自行取回。
 
 ## 隐私
 
@@ -116,7 +118,8 @@ ClipNest 没有任何网络代码。你可以用防火墙或者抓包工具验�
 ├── config.json     热键、上限等设置
 ├── blobs\          复制过的原图
 ├── thumbs\         预览用的缩略图缓存
-└── clipnest.log    崩溃日志
+├── broken\         库损坏时隔离的旧文件（只在出问题时出现）
+└── clipnest.log    崩溃与异常日志
 ```
 
 卸载时直接删掉这个目录，不留任何残留。

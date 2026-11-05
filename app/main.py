@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import faulthandler
 import sys
+import time
 from dataclasses import fields
 
 from PySide6.QtCore import Qt, QTimer
@@ -14,7 +15,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIco
 from app import autostart, paths, system_probe
 from app.config import Config
 from app.single_instance import SingleInstance
-from core import filters, thumbnails
+from core import db_guard, filters, thumbnails
 from core.clipboard import ClipboardWatcher
 from core.hotkey import HotkeyManager
 from core.models import KIND_TEXT, ClipItem
@@ -37,6 +38,8 @@ class Application:
         self.app.setWindowIcon(theme.make_icon(True))
 
         self.config = config
+        # 坏库先隔离再建连接，否则初始化阶段就会抛异常，托盘都出不来
+        self._startup_notice = db_guard.ensure_healthy(paths.db_path())
         self.repo = Repository(paths.db_path())
         # 两个独立连接：主线程只读，工作线程负责落盘和写入
         self.storage = StorageService(paths.db_path())
@@ -82,6 +85,12 @@ class Application:
 
         self.tray.set_paused(self.config.paused)
         self.tray.show()
+
+        if self._startup_notice:
+            self._notify(
+                "历史库已重置", self._startup_notice, QSystemTrayIcon.MessageIcon.Information
+            )
+            self._log(self._startup_notice)
 
         self.watcher.set_enabled(not self.config.paused)
 
@@ -191,6 +200,13 @@ class Application:
     def _on_color_scheme(self, _scheme) -> None:
         self.palette.refresh_theme()
         self.tray.setIcon(theme.make_icon(not self.config.paused))
+
+    def _log(self, message: str) -> None:
+        try:
+            with open(paths.log_path(), "a", encoding="utf-8") as handle:
+                handle.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}\n")
+        except OSError:
+            pass
 
     def _notify(
         self,
