@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPainterPath, QStandardItem, QStandardItemModel
+from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter, QPainterPath, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListView,
+    QMenu,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -23,7 +26,7 @@ from PySide6.QtWidgets import (
 from app import paths
 from app.config import Config
 from core import paster, win32
-from core.models import ClipItem
+from core.models import KIND_FILES, KIND_TEXT, MAX_NOTE_CHARS, ClipItem
 from core.repository import Repository
 from ui import theme
 from ui.item_delegate import ITEM_ROLE, ROW_HEIGHT, ClipDelegate
@@ -93,6 +96,9 @@ class PaletteWindow(QWidget):
         self._prev_hwnd = 0
         self._items: list[ClipItem] = []
         self._shown_at = 0.0
+        self._favorites_only = False
+        # 右键菜单和备注输入框会成为新的前台窗口，这段时间内别把自己收起
+        self._modal_open = False
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -166,6 +172,8 @@ class PaletteWindow(QWidget):
         self._list.setMouseTracking(True)
         self._list.selectionModel().currentChanged.connect(self._on_current_changed)
         self._list.clicked.connect(lambda _index: self._commit(only_copy=False))
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._on_context_menu)
 
         self._empty = QLabel("还没有记录。复制点什么试试。", self._card)
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -188,7 +196,7 @@ class PaletteWindow(QWidget):
         layout.addLayout(body, 1)
 
         self._footer = QLabel(
-            "↑↓ 选择 · Enter 粘贴 · Shift+Enter 纯文本 · Ctrl+Enter 仅复制 · Ctrl+P 固定 · Del 删除 · Esc 关闭",
+            "↑↓ 选择 · Enter 粘贴 · Shift+Enter 纯文本 · Ctrl+Enter 仅复制 · Ctrl+P 收藏 · Del 删除 · Esc 关闭",
             self._card,
         )
         self._footer.setFont(theme.font(8))
@@ -206,7 +214,13 @@ class PaletteWindow(QWidget):
         self._filter_group = QButtonGroup(self)
         self._filter_group.setExclusive(True)
 
-        options = (("全部", ""), ("文本", "text"), ("图片", "image"), ("文件", "files"))
+        options = (
+            ("全部", ""),
+            ("★ 收藏", "favorites"),
+            ("文本", "text"),
+            ("图片", "image"),
+            ("文件", "files"),
+        )
         for index, (label, kind) in enumerate(options):
             button = QPushButton(label, bar)
             button.setCheckable(True)
@@ -232,7 +246,9 @@ class PaletteWindow(QWidget):
 
     def _on_filter_changed(self, button_id: int) -> None:
         button = self._filter_group.button(button_id)
-        self._kind_filter = str(button.property("kind") or "") if button else ""
+        value = str(button.property("kind") or "") if button else ""
+        self._favorites_only = value == "favorites"
+        self._kind_filter = "" if self._favorites_only else value
         self.reload()
 
     # ---------- 数据 ----------
@@ -240,7 +256,10 @@ class PaletteWindow(QWidget):
     def reload(self) -> None:
         query = self._search.text().strip()
         self._items = self._repo.list(
-            query=query, kind=self._kind_filter, limit=self._config.max_items
+            query=query,
+            kind=self._kind_filter,
+            limit=self._config.max_items,
+            favorites_only=self._favorites_only,
         )
         self._model.clear()
         for item in self._items:
@@ -249,9 +268,15 @@ class PaletteWindow(QWidget):
             row.setEditable(False)
             self._model.appendRow(row)
 
-        self._empty.setText(
-            "没有匹配的记录。" if (query or self._kind_filter) else "还没有记录。复制点什么试试。"
-        )
+        if self._favorites_only:
+            empty_text = (
+                "没有匹配的收藏项。" if query else "收藏夹还是空的。选中一条按 Ctrl+P 加入。"
+            )
+        elif query or self._kind_filter:
+            empty_text = "没有匹配的记录。"
+        else:
+            empty_text = "还没有记录。复制点什么试试。"
+        self._empty.setText(empty_text)
         self._stack.setCurrentWidget(self._list if self._items else self._empty)
         if self._items:
             self._list.setCurrentIndex(self._model.index(0, 0))
@@ -272,6 +297,81 @@ class PaletteWindow(QWidget):
         return index.data(ITEM_ROLE)
 
     # ---------- 交互 ----------
+
+    def _toggle_favorite(self, item: ClipItem) -> None:
+        self._repo.toggle_pin(item.id)
+        self.reload()
+
+    def _delete_item(self, item: ClipItem) -> None:
+        blob = self._repo.delete(item.id)
+        paths.remove_blob(blob)
+        self.reload()
+
+    def _edit_note(self, item: ClipItem) -> None:
+        self._modal_open = True
+        try:
+            text, accepted = QInputDialog.getText(
+                self,
+                "备注",
+                "给这条内容起个名字或写句备注（留空即清除）：",
+                QLineEdit.EchoMode.Normal,
+                item.note,
+            )
+        finally:
+            self._modal_open = False
+            self._shown_at = time.monotonic()
+            self.activateWindow()
+            self._search.setFocus()
+        if accepted:
+            self._repo.set_note(item.id, text.strip()[:MAX_NOTE_CHARS])
+            self.reload()
+
+    def _open_path(self, target: Path) -> None:
+        if target.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+    def _build_context_menu(self, item: ClipItem) -> QMenu:
+        """单独留出来，界面测试可以只检查菜单项，不必真的弹出菜单。"""
+        menu = QMenu(self)
+        menu.addAction("粘贴", lambda: self._commit(False))
+        menu.addAction("粘贴为纯文本", lambda: self._commit(False, True))
+        menu.addAction("仅复制", lambda: self._commit(True))
+        if item.kind == KIND_TEXT:
+            menu.addAction("复制为纯文本", lambda: self._commit(True, True))
+        menu.addSeparator()
+        menu.addAction(
+            "移出收藏" if item.pinned else "加入收藏",
+            lambda: self._toggle_favorite(item),
+        )
+        menu.addAction("编辑备注…", lambda: self._edit_note(item))
+        if item.kind == KIND_FILES and item.files:
+            first = Path(item.files[0])
+            if first.exists():
+                menu.addSeparator()
+                menu.addAction("打开文件", lambda: self._open_path(first))
+                menu.addAction("打开所在文件夹", lambda: self._open_path(first.parent))
+        menu.addSeparator()
+        menu.addAction("删除", lambda: self._delete_item(item))
+        return menu
+
+    def _on_context_menu(self, pos: QPoint) -> None:
+        index = self._list.indexAt(pos)
+        if not index.isValid():
+            return
+        self._list.setCurrentIndex(index)
+        item = index.data(ITEM_ROLE)
+        if item is None:
+            return
+
+        menu = self._build_context_menu(item)
+        self._modal_open = True
+        try:
+            menu.exec(self._list.viewport().mapToGlobal(pos))
+        finally:
+            self._modal_open = False
+            self._shown_at = time.monotonic()
+            self.activateWindow()
+            self._search.setFocus()
 
     def _on_nav(self, action: str) -> None:
         if action == "escape":
@@ -332,15 +432,12 @@ class PaletteWindow(QWidget):
         if key == Qt.Key.Key_Delete:
             item = self._selected()
             if item:
-                blob = self._repo.delete(item.id)
-                paths.remove_blob(blob)
-                self.reload()
+                self._delete_item(item)
             return
         if key == Qt.Key.Key_P and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             item = self._selected()
             if item:
-                self._repo.toggle_pin(item.id)
-                self.reload()
+                self._toggle_favorite(item)
             return
         super().keyPressEvent(event)
 
@@ -377,7 +474,7 @@ class PaletteWindow(QWidget):
         刚弹出的前一瞬 activateWindow 还在路上，给 300ms 宽限期，
         否则会在显示的同时把自己关掉。
         """
-        if not self.isVisible():
+        if not self.isVisible() or self._modal_open:
             return
         if time.monotonic() - self._shown_at < 0.3:
             return
@@ -385,7 +482,7 @@ class PaletteWindow(QWidget):
             self.hide()
 
     def _maybe_hide(self) -> None:
-        if not self.isVisible():
+        if not self.isVisible() or self._modal_open:
             return
         if self._holds_foreground():
             return

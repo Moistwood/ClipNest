@@ -84,6 +84,50 @@ class UiSmokeTest(unittest.TestCase):
         self.assertFalse(canvas.isNull())
         window.close()
 
+    def test_favorites_filter_and_note_preview(self) -> None:
+        self._seed(3)
+        first = self.repo.all_items()[0]
+        self.repo.toggle_pin(first.id)
+        self.repo.set_note(first.id, "重要备注")
+
+        window = PaletteWindow(self.repo, Config())
+        window.reload()
+        favorite_button = next(
+            button
+            for button in window._filter_group.buttons()
+            if button.property("kind") == "favorites"
+        )
+        favorite_button.click()
+        self.app.processEvents()
+
+        self.assertEqual(len(window._items), 1)
+        self.assertEqual(window._items[0].id, first.id)
+        # 窗口本身没 show，isVisible() 恒为假，这里检查的是有没有被显式隐藏
+        self.assertFalse(window._preview._note.isHidden())
+        self.assertEqual(window._preview._note.text(), "★ 重要备注")
+        window.close()
+
+    def test_context_menu_actions(self) -> None:
+        self._seed(1)
+        window = PaletteWindow(self.repo, Config())
+        window.reload()
+        item = window._items[0]
+        menu = window._build_context_menu(item)
+        labels = [action.text() for action in menu.actions() if action.text()]
+        self.assertIn("粘贴为纯文本", labels)
+        self.assertIn("复制为纯文本", labels)
+        self.assertIn("加入收藏", labels)
+        self.assertIn("编辑备注…", labels)
+
+        self.repo.toggle_pin(item.id)
+        pinned_labels = [
+            action.text()
+            for action in window._build_context_menu(window._repo.get(item.id)).actions()
+            if action.text()
+        ]
+        self.assertIn("移出收藏", pinned_labels)
+        window.close()
+
     def test_icon_is_generated(self) -> None:
         self.assertFalse(make_icon(True).isNull())
         self.assertFalse(make_icon(False).isNull())

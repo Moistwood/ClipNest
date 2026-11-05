@@ -50,6 +50,13 @@ class PreviewPane(QWidget):
         self._stack.addWidget(self._text)
         self._stack.addWidget(self._image)
 
+        self._note = QLabel(self)
+        self._note.setFont(theme.font(9))
+        self._note.setWordWrap(True)
+        self._note.setTextFormat(Qt.TextFormat.PlainText)
+        self._note.setStyleSheet(f"color: {self.pal.accent}; padding-bottom: 4px;")
+        self._note.hide()
+
         self._format_note = QLabel("粘贴时会保留原始格式", self)
         self._format_note.setFont(theme.font(8))
         self._format_note.setStyleSheet(f"color: {self.pal.text_faint};")
@@ -57,6 +64,7 @@ class PreviewPane(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._note)
         layout.addWidget(self._format_note)
         layout.addWidget(self._stack)
 
@@ -66,6 +74,7 @@ class PreviewPane(QWidget):
     def refresh_palette(self) -> None:
         self.pal = theme.current()
         self._empty.setStyleSheet(f"color: {self.pal.text_faint};")
+        self._note.setStyleSheet(f"color: {self.pal.accent}; padding-bottom: 4px;")
         self._format_note.setStyleSheet(f"color: {self.pal.text_faint};")
         self._text.setStyleSheet(
             f"background: transparent; color: {self.pal.text};"
@@ -75,6 +84,10 @@ class PreviewPane(QWidget):
 
     def show_item(self, item: ClipItem | None) -> None:
         self._current = item
+        note = item.note if item else ""
+        self._note.setVisible(bool(note))
+        if note:
+            self._note.setText("★ " + note)
         self._format_note.setVisible(bool(item and (item.html or item.rtf)))
         if item is None:
             self._stack.setCurrentWidget(self._empty)

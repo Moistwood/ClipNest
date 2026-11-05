@@ -90,10 +90,18 @@ class ClipDelegate(QStyledItemDelegate):
 
         painter.setFont(self.font_time)
         painter.setPen(QColor(pal.text_faint))
-        meta = "已固定" if item.pinned else format_relative(item.created_at)
+        if item.note:
+            meta = "★ " + item.note
+        elif item.pinned:
+            meta = "★ 已收藏"
+        else:
+            meta = format_relative(item.created_at)
+        short = QFontMetrics(self.font_time).elidedText(
+            meta, Qt.TextElideMode.ElideRight, 70
+        )
         painter.drawText(
             QRect(rect.right() - 78, rect.top() + 10, 70, 20),
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-            meta,
+            short,
         )
         painter.restore()
