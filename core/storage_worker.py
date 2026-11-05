@@ -29,7 +29,7 @@ class _Worker(QObject):
     @Slot()
     def initialize(self) -> None:
         try:
-            self._repo = Repository(self._db_path)
+            self._repo = Repository(self._db_path, setup_index=False)
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(f"打开数据库失败：{exc}")
 

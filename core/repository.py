@@ -49,9 +49,43 @@ ON CONFLICT(content_hash) DO NOTHING
 RETURNING id
 """
 
+# trigram 把文本按三个字符滑窗切，中文不需要额外分词器。
+# 但它对少于三个字符的查询永远返回 0 条，所以短词必须走 LIKE。
+# 老版本 SQLite 没有 trigram 时整段跳过，程序退化成纯 LIKE，一样能用。
+FTS_SCHEMA = """
+CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(body, tokenize='trigram');
+
+CREATE TRIGGER IF NOT EXISTS items_fts_insert AFTER INSERT ON items BEGIN
+    INSERT INTO items_fts(rowid, body)
+    VALUES (new.id, new.text_body || char(10) || new.preview);
+END;
+
+CREATE TRIGGER IF NOT EXISTS items_fts_update AFTER UPDATE ON items BEGIN
+    DELETE FROM items_fts WHERE rowid = old.id;
+    INSERT INTO items_fts(rowid, body)
+    VALUES (new.id, new.text_body || char(10) || new.preview);
+END;
+
+CREATE TRIGGER IF NOT EXISTS items_fts_delete AFTER DELETE ON items BEGIN
+    DELETE FROM items_fts WHERE rowid = old.id;
+END;
+"""
+
+FTS_BACKFILL = """
+INSERT INTO items_fts(rowid, body)
+SELECT i.id, i.text_body || char(10) || i.preview
+FROM items i
+WHERE i.id NOT IN (SELECT rowid FROM items_fts)
+"""
+
 
 class Repository:
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, setup_index: bool = True) -> None:
+        """写入线程传 setup_index=False，索引结构由主线程那一个连接建立。
+
+        触发器是数据库对象，不属于某个连接，工作线程往 items 写的
+        时候照样会同步到全文索引，没必要两个连接抢着建表。
+        """
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -61,6 +95,20 @@ class Repository:
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.executescript(SCHEMA)
         self._conn.commit()
+        self._fts_ready = self._setup_fts() if setup_index else False
+
+    def _setup_fts(self) -> bool:
+        try:
+            self._conn.executescript(FTS_SCHEMA)
+            indexed = self._conn.execute("SELECT count(*) FROM items_fts").fetchone()[0]
+            total = self._conn.execute("SELECT count(*) FROM items").fetchone()[0]
+            if indexed != total:
+                self._conn.execute(FTS_BACKFILL)
+            self._conn.commit()
+            return True
+        except sqlite3.Error:
+            self._conn.rollback()
+            return False
 
     def close(self) -> None:
         self._conn.close()
@@ -142,13 +190,40 @@ class Repository:
         )
 
     def list(self, query: str = "", kind: str = "", limit: int = 100) -> list[ClipItem]:
+        term = query.strip()
+        if term and self._fts_ready and len(term) >= 3:
+            try:
+                hits = self._search_fts(term, kind, limit)
+            except sqlite3.Error:
+                hits = []
+            # 索引没命中时再用 LIKE 兜一次，宁可多查一次也别让用户以为没这条
+            if hits:
+                return hits
+        return self._search_like(term, kind, limit)
+
+    def _search_fts(self, term: str, kind: str, limit: int) -> list[ClipItem]:
+        # 整串加引号当短语，输入里的 * OR - 之类不会被当成 FTS5 语法
+        phrase = '"' + term.replace('"', '""') + '"'
+        sql = (
+            "SELECT i.* FROM items_fts JOIN items i ON i.id = items_fts.rowid "
+            "WHERE items_fts MATCH ?"
+        )
+        params: list[object] = [phrase]
+        if kind:
+            sql += " AND i.kind = ?"
+            params.append(kind)
+        sql += " ORDER BY i.pinned DESC, i.last_used_at DESC LIMIT ?"
+        params.append(limit)
+        return [self._to_item(row) for row in self._conn.execute(sql, params)]
+
+    def _search_like(self, term: str, kind: str, limit: int) -> list[ClipItem]:
         sql = "SELECT * FROM items WHERE 1=1"
         params: list[object] = []
         if kind:
             sql += " AND kind = ?"
             params.append(kind)
-        if query:
-            escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        if term:
+            escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             sql += " AND (text_body LIKE ? ESCAPE '\\' OR preview LIKE ? ESCAPE '\\')"
             params.extend([f"%{escaped}%", f"%{escaped}%"])
         sql += " ORDER BY pinned DESC, last_used_at DESC LIMIT ?"

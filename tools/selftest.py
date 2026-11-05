@@ -161,6 +161,18 @@ def check_native_clipboard() -> str:
     return "读取失败，程序按未开启处理"
 
 
+def check_fts() -> str:
+    from core.repository import Repository
+
+    tmp = Path(tempfile.mkdtemp()) / "fts_probe.db"
+    repo = Repository(tmp)
+    ready = repo._fts_ready
+    repo.close()
+    if not ready:
+        return "当前 SQLite 不支持 trigram，检索自动降级成模糊匹配"
+    return "trigram 索引可用，短查询会降级成模糊匹配"
+
+
 def check_theme() -> str:
     from PySide6.QtWidgets import QApplication
 
@@ -187,6 +199,7 @@ def main() -> int:
         ("数据目录可写", check_data_dir),
         ("SQLite 能力", check_sqlite),
         ("存储层读写", check_repository),
+        ("全文检索能力", check_fts),
         ("全局热键", check_hotkey),
         ("系统剪贴板状态", check_native_clipboard),
         ("主题与图标", check_theme),
