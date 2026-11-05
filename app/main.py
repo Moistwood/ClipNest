@@ -9,7 +9,7 @@ from dataclasses import fields
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtNetwork import QLocalServer
-from PySide6.QtWidgets import QApplication, QDialog, QSystemTrayIcon, QWidget
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIcon, QWidget
 
 from app import autostart, paths, system_probe
 from app.config import Config
@@ -130,6 +130,17 @@ class Application:
         self.tray.set_paused(paused)
 
     def _on_clear(self) -> None:
+        box = QMessageBox(
+            QMessageBox.Icon.Question,
+            "清空历史",
+            "确定清空历史记录吗？\n已固定的条目会保留，其余记录会被删除，不能撤销。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        box.button(QMessageBox.StandardButton.Yes).setText("清空")
+        box.button(QMessageBox.StandardButton.No).setText("取消")
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        if box.exec() != QMessageBox.StandardButton.Yes:
+            return
         for blob in self.repo.clear(keep_pinned=True):
             paths.remove_blob(blob)
         if self.palette.isVisible():
