@@ -128,6 +128,20 @@ class UiSmokeTest(unittest.TestCase):
         self.assertIn("移出收藏", pinned_labels)
         window.close()
 
+    def test_window_can_be_resized(self) -> None:
+        from PySide6.QtWidgets import QSizeGrip
+
+        window = PaletteWindow(self.repo, Config())
+        self.assertEqual(len(window.findChildren(QSizeGrip)), 1)
+        window.resize(920, 640)
+        self.assertEqual((window.width(), window.height()), (920, 640))
+
+        received: list[tuple[int, int]] = []
+        window.size_changed.connect(lambda w, h: received.append((w, h)))
+        window._emit_size()
+        self.assertEqual(received, [(920, 640)])
+        window.close()
+
     def test_icon_is_generated(self) -> None:
         self.assertFalse(make_icon(True).isNull())
         self.assertFalse(make_icon(False).isNull())

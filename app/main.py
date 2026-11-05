@@ -61,6 +61,7 @@ class Application:
         self.storage.saved.connect(self._on_stored)
         self.storage.failed.connect(self._on_storage_failed)
         self.hotkey.activated.connect(self.palette.popup)
+        self.palette.size_changed.connect(self._on_size_changed)
 
         self.tray.show_requested.connect(self.palette.popup)
         self.tray.settings_requested.connect(self._open_settings)
@@ -110,6 +111,11 @@ class Application:
             return
         # 大图的落盘和 SQLite 事务都交给工作线程，这里立刻回到事件循环
         self.storage.save(item)
+
+    def _on_size_changed(self, width: int, height: int) -> None:
+        self.config.window_width = width
+        self.config.window_height = height
+        self.config.save()
 
     def _on_stored(self, _item: ClipItem) -> None:
         self._prune()

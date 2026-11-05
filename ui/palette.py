@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QListView,
     QMenu,
     QPushButton,
+    QSizeGrip,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -88,6 +89,8 @@ class Card(QWidget):
 
 class PaletteWindow(QWidget):
     pasted = Signal(object)
+    # 面板自己不写配置，尺寸改动交给主进程统一保存
+    size_changed = Signal(int, int)
 
     def __init__(self, repo: Repository, config: Config, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -106,7 +109,8 @@ class PaletteWindow(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setFixedSize(config.window_width, config.window_height)
+        self.setMinimumSize(560, 380)
+        self.resize(config.window_width, config.window_height)
 
         # 置顶窗口必须自己负责消失。焦点在搜索框这类子控件上，
         # 父窗口收不到失焦事件，所以除了 changeEvent 还要轮询前台进程兜底。
@@ -118,6 +122,12 @@ class PaletteWindow(QWidget):
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(60)
         self._search_timer.timeout.connect(self.reload)
+
+        # 拖拽时会连发一堆 resizeEvent，停手 350ms 再写配置
+        self._size_timer = QTimer(self)
+        self._size_timer.setSingleShot(True)
+        self._size_timer.setInterval(350)
+        self._size_timer.timeout.connect(self._emit_size)
 
         self._build()
 
@@ -201,7 +211,13 @@ class PaletteWindow(QWidget):
         )
         self._footer.setFont(theme.font(8))
         self._footer.setStyleSheet(f"color: {pal.text_faint};")
-        layout.addWidget(self._footer)
+        footer_row = QHBoxLayout()
+        footer_row.setSpacing(6)
+        footer_row.addWidget(self._footer, 1)
+        footer_row.addWidget(
+            QSizeGrip(self._card), 0, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight
+        )
+        layout.addLayout(footer_row)
 
     def _build_filters(self, pal) -> QWidget:
         bar = QWidget(self._card)
@@ -507,9 +523,14 @@ class PaletteWindow(QWidget):
         if screen is None:
             return
         area = screen.availableGeometry()
-        x = area.center().x() - self.width() // 2
+        # 放大过之后别把面板推到屏幕外面去
+        width = min(self.width(), area.width() - 24)
+        height = min(self.height(), area.height() - 24)
+        x = area.center().x() - width // 2
         y = area.top() + int(area.height() * 0.18)
-        self.move(QPoint(max(area.left(), x), max(area.top(), y)))
+        x = max(area.left() + 8, min(x, area.right() - width - 7))
+        y = max(area.top() + 8, min(y, area.bottom() - height - 7))
+        self.move(QPoint(x, y))
 
     def refresh_theme(self) -> None:
         self._delegate.refresh_palette()
@@ -524,3 +545,11 @@ class PaletteWindow(QWidget):
         self._footer.setStyleSheet(f"color: {pal.text_faint};")
         self._filter_bar.setStyleSheet(self._filter_style(pal))
         self._list.viewport().update()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt 接口)
+        super().resizeEvent(event)
+        if self.isVisible():
+            self._size_timer.start()
+
+    def _emit_size(self) -> None:
+        self.size_changed.emit(self.width(), self.height())
