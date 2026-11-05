@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIco
 
 from app import autostart, paths, system_probe
 from app.config import Config
+from app.help_text import help_text
 from app.single_instance import SingleInstance
 from core import db_guard, filters, thumbnails
 from core.clipboard import ClipboardWatcher
@@ -69,6 +70,7 @@ class Application:
         self.tray.show_requested.connect(self.palette.popup)
         self.tray.settings_requested.connect(self._open_settings)
         self.tray.stats_requested.connect(self._open_stats)
+        self.tray.help_requested.connect(self._open_help)
         self.tray.pause_toggled.connect(self._on_pause)
         self.tray.clear_requested.connect(self._on_clear)
         self.tray.quit_requested.connect(self._on_quit)
@@ -105,7 +107,7 @@ class Application:
         thumbnails.prune(paths.thumbs_dir(), 30)
 
         # 托盘刚挂上去时还没准备好接通知，延后一点再说
-        QTimer.singleShot(1500, self._hint_native_clipboard)
+        QTimer.singleShot(1500, self._hint_on_first_run)
 
     # ---------- 事件 ----------
 
@@ -219,24 +221,30 @@ class Application:
         if QSystemTrayIcon.supportsMessages():
             self.tray.showMessage(title, message, level, 6000)
 
-    def _hint_native_clipboard(self) -> None:
-        """系统自带的剪贴板历史常年关着，第一次运行时说明两者的关系。
-
-        只在未开启时提示，提示过一次就写进配置，不重复打扰。
-        """
-        if self.config.hinted_native_clipboard:
+    def _hint_on_first_run(self) -> None:
+        """第一次运行说明热键和入口；看过一次就写进配置，不再打扰。"""
+        if self.config.hinted_first_run:
             return
-        self.config.hinted_native_clipboard = True
+        self.config.hinted_first_run = True
         self.config.save()
 
-        if system_probe.native_history_enabled() is not False:
-            return
-
+        lines = [
+            f"已开始记录。按 {self.config.hotkey} 呼出历史面板，"
+            "托盘菜单里有「使用说明…」和设置。"
+        ]
+        if system_probe.native_history_enabled() is False:
+            lines.append("系统 Win+V 历史当前是关闭的，两者互不影响。")
         self._notify(
-            "系统剪贴板历史现在是关闭的",
-            f"按 Win+V 调不出历史记录，但这不影响 {paths.APP_NAME} 自己记录的内容。\n"
-            "想同时用系统自带的，在「设置 → 系统 → 剪贴板」里打开。",
+            f"{paths.APP_NAME} 已就绪",
+            "\n".join(lines),
             QSystemTrayIcon.MessageIcon.Information,
+        )
+
+    def _open_help(self) -> None:
+        QMessageBox.information(
+            None,
+            f"{paths.APP_NAME} 使用说明",
+            help_text(self.config.hotkey, str(paths.data_dir())),
         )
 
     def _warn_hotkey(self, combo: str) -> None:
