@@ -244,7 +244,7 @@ class Application:
         QMessageBox.information(
             None,
             f"{paths.APP_NAME} 使用说明",
-            help_text(self.config.hotkey, str(paths.data_dir())),
+            help_text(self.config.hotkey, str(paths.data_dir()), paths.APP_VERSION),
         )
 
     def _warn_hotkey(self, combo: str) -> None:

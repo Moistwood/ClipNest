@@ -20,7 +20,7 @@ class HelpTextTest(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_shortcuts_are_listed(self) -> None:
-        text = help_text("Ctrl+Alt+V", "C:/Users/demo/AppData/Roaming/ClipNest")
+        text = help_text("Ctrl+Alt+V", "C:/Users/demo/AppData/Roaming/ClipNest", "1.1.0")
         for token in (
             "Ctrl+Alt+V",
             "Shift+Enter",
@@ -28,6 +28,7 @@ class HelpTextTest(unittest.TestCase):
             "Ctrl+P",
             "加入/移出收藏",
             "C:/Users/demo/AppData/Roaming/ClipNest",
+            "1.1.0",
         ):
             self.assertIn(token, text)
 

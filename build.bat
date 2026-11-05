@@ -11,7 +11,7 @@ echo [2/4] 安装依赖
 call .venv\Scripts\activate.bat
 python -m pip install -q --upgrade pip
 python -m pip install -q -r requirements.txt
-python -m pip install -q nuitka || goto :fail
+python -m pip install -q nuitka==4.3.4 || goto :fail
 
 echo [3/4] 打包
 python -m nuitka ^
@@ -19,6 +19,10 @@ python -m nuitka ^
     --assume-yes-for-downloads ^
     --enable-plugin=pyside6 ^
     --windows-console-mode=disable ^
+    --company-name=ClipNest ^
+    --product-name=ClipNest ^
+    --file-version=1.1.0.0 ^
+    --product-version=1.1.0.0 ^
     --output-dir=build ^
     run.py || goto :fail
 
