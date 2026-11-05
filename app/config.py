@@ -17,6 +17,8 @@ class Config:
     strict_secret_filter: bool = False
     window_width: int = 800
     window_height: int = 520
+    # 系统剪贴板的提示只弹一次，用户看过就不再打扰
+    hinted_native_clipboard: bool = False
 
     @classmethod
     def load(cls) -> Config:

@@ -6,12 +6,12 @@ import faulthandler
 import sys
 from dataclasses import fields
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtWidgets import QApplication, QDialog, QSystemTrayIcon, QWidget
 
-from app import autostart, paths
+from app import autostart, paths, system_probe
 from app.config import Config
 from app.single_instance import SingleInstance
 from core import filters, thumbnails
@@ -89,6 +89,9 @@ class Application:
         autostart.repair()
         thumbnails.prune(paths.thumbs_dir(), 30)
 
+        # 托盘刚挂上去时还没准备好接通知，延后一点再说
+        QTimer.singleShot(1500, self._hint_native_clipboard)
+
     # ---------- 事件 ----------
 
     def _on_capture(self, item: ClipItem) -> None:
@@ -164,11 +167,34 @@ class Application:
         self.palette.refresh_theme()
         self.tray.setIcon(theme.make_icon(not self.config.paused))
 
-    def _notify(self, title: str, message: str) -> None:
+    def _notify(
+        self,
+        title: str,
+        message: str,
+        level: QSystemTrayIcon.MessageIcon = QSystemTrayIcon.MessageIcon.Warning,
+    ) -> None:
         if QSystemTrayIcon.supportsMessages():
-            self.tray.showMessage(
-                title, message, QSystemTrayIcon.MessageIcon.Warning, 6000
-            )
+            self.tray.showMessage(title, message, level, 6000)
+
+    def _hint_native_clipboard(self) -> None:
+        """系统自带的剪贴板历史常年关着，第一次运行时说明两者的关系。
+
+        只在未开启时提示，提示过一次就写进配置，不重复打扰。
+        """
+        if self.config.hinted_native_clipboard:
+            return
+        self.config.hinted_native_clipboard = True
+        self.config.save()
+
+        if system_probe.native_history_enabled() is not False:
+            return
+
+        self._notify(
+            "系统剪贴板历史现在是关闭的",
+            f"按 Win+V 调不出历史记录，但这不影响 {paths.APP_NAME} 自己记录的内容。\n"
+            "想同时用系统自带的，在「设置 → 系统 → 剪贴板」里打开。",
+            QSystemTrayIcon.MessageIcon.Information,
+        )
 
     def _warn_hotkey(self, combo: str) -> None:
         self.tray.setToolTip(f"{paths.APP_NAME} · 热键 {combo} 注册失败")

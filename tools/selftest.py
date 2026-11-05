@@ -150,6 +150,17 @@ def check_hotkey() -> str:
     raise RuntimeError("Ctrl+Alt+V 已被其他程序占用，需要换一个热键")
 
 
+def check_native_clipboard() -> str:
+    from app import system_probe
+
+    state = system_probe.native_history_enabled()
+    if state is True:
+        return "系统自带剪贴板历史已开启（Win+V 可用）"
+    if state is False:
+        return "系统自带剪贴板历史未开启（Win+V 不可用，不影响本工具）"
+    return "读取失败，程序按未开启处理"
+
+
 def check_theme() -> str:
     from PySide6.QtWidgets import QApplication
 
@@ -177,6 +188,7 @@ def main() -> int:
         ("SQLite 能力", check_sqlite),
         ("存储层读写", check_repository),
         ("全局热键", check_hotkey),
+        ("系统剪贴板状态", check_native_clipboard),
         ("主题与图标", check_theme),
     ]
 
