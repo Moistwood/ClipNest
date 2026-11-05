@@ -40,7 +40,7 @@ jobs:
           Copy-Item README.md dist\ClipNest\
 
       - name: 压缩产物
-        run: Compress-Archive -Path dist\ClipNest\* -DestinationPath ClipNest-${{ github.ref_name }}-win64.zip
+        run: Compress-Archive -Path dist\ClipNest -DestinationPath ClipNest-${{ github.ref_name }}-win64.zip
 
       - name: 发布
         uses: softprops/action-gh-release@v2
