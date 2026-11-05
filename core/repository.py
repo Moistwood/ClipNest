@@ -57,28 +57,36 @@ RETURNING id
 # trigram 把文本按三个字符滑窗切，中文不需要额外分词器。
 # 但它对少于三个字符的查询永远返回 0 条，所以短词必须走 LIKE。
 # 老版本 SQLite 没有 trigram 时整段跳过，程序退化成纯 LIKE，一样能用。
-FTS_SCHEMA = """
+# 备注也要能被搜到，所以索引里带上 note。CREATE TRIGGER IF NOT EXISTS
+# 不会替换旧定义，每次启动先删再建，老库靠 user_version 重建一次索引。
+FTS_VERSION = 2
+FTS_BODY_NEW = "new.text_body || char(10) || new.note || char(10) || new.preview"
+FTS_BODY_ROW = "i.text_body || char(10) || i.note || char(10) || i.preview"
+FTS_SCHEMA = f"""
 CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(body, tokenize='trigram');
 
-CREATE TRIGGER IF NOT EXISTS items_fts_insert AFTER INSERT ON items BEGIN
+DROP TRIGGER IF EXISTS items_fts_insert;
+CREATE TRIGGER items_fts_insert AFTER INSERT ON items BEGIN
     INSERT INTO items_fts(rowid, body)
-    VALUES (new.id, new.text_body || char(10) || new.preview);
+    VALUES (new.id, {FTS_BODY_NEW});
 END;
 
-CREATE TRIGGER IF NOT EXISTS items_fts_update AFTER UPDATE ON items BEGIN
+DROP TRIGGER IF EXISTS items_fts_update;
+CREATE TRIGGER items_fts_update AFTER UPDATE ON items BEGIN
     DELETE FROM items_fts WHERE rowid = old.id;
     INSERT INTO items_fts(rowid, body)
-    VALUES (new.id, new.text_body || char(10) || new.preview);
+    VALUES (new.id, {FTS_BODY_NEW});
 END;
 
-CREATE TRIGGER IF NOT EXISTS items_fts_delete AFTER DELETE ON items BEGIN
+DROP TRIGGER IF EXISTS items_fts_delete;
+CREATE TRIGGER items_fts_delete AFTER DELETE ON items BEGIN
     DELETE FROM items_fts WHERE rowid = old.id;
 END;
 """
 
-FTS_BACKFILL = """
+FTS_BACKFILL = f"""
 INSERT INTO items_fts(rowid, body)
-SELECT i.id, i.text_body || char(10) || i.preview
+SELECT i.id, {FTS_BODY_ROW}
 FROM items i
 WHERE i.id NOT IN (SELECT rowid FROM items_fts)
 """
@@ -115,10 +123,13 @@ class Repository:
     def _setup_fts(self) -> bool:
         try:
             self._conn.executescript(FTS_SCHEMA)
+            version = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
             indexed = self._conn.execute("SELECT count(*) FROM items_fts").fetchone()[0]
             total = self._conn.execute("SELECT count(*) FROM items").fetchone()[0]
-            if indexed != total:
+            if version < FTS_VERSION or indexed != total:
+                self._conn.execute("DELETE FROM items_fts")
                 self._conn.execute(FTS_BACKFILL)
+                self._conn.execute(f"PRAGMA user_version = {FTS_VERSION}")
             self._conn.commit()
             return True
         except sqlite3.Error:
@@ -212,19 +223,27 @@ class Repository:
             note=row["note"],
         )
 
-    def list(self, query: str = "", kind: str = "", limit: int = 100) -> list[ClipItem]:
+    def list(
+        self,
+        query: str = "",
+        kind: str = "",
+        limit: int = 100,
+        favorites_only: bool = False,
+    ) -> list[ClipItem]:
         term = query.strip()
         if term and self._fts_ready and len(term) >= 3:
             try:
-                hits = self._search_fts(term, kind, limit)
+                hits = self._search_fts(term, kind, limit, favorites_only)
             except sqlite3.Error:
                 hits = []
             # 索引没命中时再用 LIKE 兜一次，宁可多查一次也别让用户以为没这条
             if hits:
                 return hits
-        return self._search_like(term, kind, limit)
+        return self._search_like(term, kind, limit, favorites_only)
 
-    def _search_fts(self, term: str, kind: str, limit: int) -> list[ClipItem]:
+    def _search_fts(
+        self, term: str, kind: str, limit: int, favorites_only: bool
+    ) -> list[ClipItem]:
         # 整串加引号当短语，输入里的 * OR - 之类不会被当成 FTS5 语法
         phrase = '"' + term.replace('"', '""') + '"'
         sql = (
@@ -235,20 +254,30 @@ class Repository:
         if kind:
             sql += " AND i.kind = ?"
             params.append(kind)
+        if favorites_only:
+            sql += " AND i.pinned = 1"
         sql += " ORDER BY i.pinned DESC, i.last_used_at DESC LIMIT ?"
         params.append(limit)
         return [self._to_item(row) for row in self._conn.execute(sql, params)]
 
-    def _search_like(self, term: str, kind: str, limit: int) -> list[ClipItem]:
+    def _search_like(
+        self, term: str, kind: str, limit: int, favorites_only: bool
+    ) -> list[ClipItem]:
         sql = "SELECT * FROM items WHERE 1=1"
         params: list[object] = []
         if kind:
             sql += " AND kind = ?"
             params.append(kind)
+        if favorites_only:
+            sql += " AND pinned = 1"
         if term:
             escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            sql += " AND (text_body LIKE ? ESCAPE '\\' OR preview LIKE ? ESCAPE '\\')"
-            params.extend([f"%{escaped}%", f"%{escaped}%"])
+            sql += (
+                " AND (text_body LIKE ? ESCAPE '\\'"
+                " OR preview LIKE ? ESCAPE '\\'"
+                " OR note LIKE ? ESCAPE '\\')"
+            )
+            params.extend([f"%{escaped}%"] * 3)
         sql += " ORDER BY pinned DESC, last_used_at DESC LIMIT ?"
         params.append(limit)
         return [self._to_item(row) for row in self._conn.execute(sql, params)]

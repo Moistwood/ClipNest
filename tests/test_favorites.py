@@ -49,6 +49,25 @@ class FavoritesTest(unittest.TestCase):
         self.assertEqual(repo.get(item_id).note, "旧库也能写")
         repo.close()
 
+    def test_note_search_and_favorites_filter(self) -> None:
+        repo = Repository(self.root / "search.db")
+        item_id = repo.add(self._text("alpha"))
+        repo.set_note(item_id, "季度合同编号")
+        repo.add(self._text("ordinary"))
+
+        # 长查询走全文索引，两字短查询走 LIKE，两条路径都要能命中备注
+        self.assertIn(item_id, [i.id for i in repo.list(query="季度合同编号")])
+        self.assertIn(item_id, [i.id for i in repo.list(query="季度")])
+
+        self.assertEqual(repo.list(favorites_only=True), [])
+        repo.toggle_pin(item_id)
+        self.assertEqual([i.id for i in repo.list(favorites_only=True)], [item_id])
+        self.assertEqual(
+            [i.id for i in repo.list(query="季度合同编号", favorites_only=True)], [item_id]
+        )
+        self.assertEqual(repo.list(query="ordinary", favorites_only=True), [])
+        repo.close()
+
     def test_export_only_favorites_and_import_keeps_note(self) -> None:
         repo = Repository(self.root / "source.db")
         fav_id = repo.add(self._text("important"))
