@@ -161,6 +161,16 @@ def check_native_clipboard() -> str:
     return "读取失败，程序按未开启处理"
 
 
+def check_clipboard_fallback() -> str:
+    from core.clipboard import MESSAGE_GRACE, message_lost
+
+    if not message_lost(0.0, MESSAGE_GRACE + 0.1):
+        raise RuntimeError("消息丢失时没有触发补读")
+    if message_lost(0.0, MESSAGE_GRACE - 0.1):
+        raise RuntimeError("宽限期内误触发了补读")
+    return f"序号兜底判定阈值 {MESSAGE_GRACE}s"
+
+
 def check_fts() -> str:
     from core.repository import Repository
 
@@ -201,6 +211,7 @@ def main() -> int:
         ("存储层读写", check_repository),
         ("全文检索能力", check_fts),
         ("全局热键", check_hotkey),
+        ("剪贴板消息兜底", check_clipboard_fallback),
         ("系统剪贴板状态", check_native_clipboard),
         ("主题与图标", check_theme),
     ]

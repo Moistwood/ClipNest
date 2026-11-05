@@ -9,7 +9,7 @@ import struct
 import time
 from ctypes import wintypes
 
-from PySide6.QtCore import QAbstractNativeEventFilter, QBuffer, QByteArray, QIODevice, QObject, Signal
+from PySide6.QtCore import QAbstractNativeEventFilter, QBuffer, QByteArray, QIODevice, QObject, QTimer, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
@@ -25,6 +25,14 @@ from core.models import (
 )
 
 _formats: dict[str, int] = {}
+
+# 休眠唤醒、或者别的程序长时间占着剪贴板链时，WM_CLIPBOARDUPDATE 偶尔会丢。
+# 超过这个时间没消息、但剪贴板序号变了，就补读一次。
+MESSAGE_GRACE = 1.2
+
+
+def message_lost(last_message_at: float, now: float, grace: float = MESSAGE_GRACE) -> bool:
+    return now - last_message_at > grace
 
 # CF_HTML 的头部是 ASCII，四个数字是相对整块数据的字节偏移
 CF_HTML_TEMPLATE = (
@@ -322,15 +330,32 @@ class ClipboardWatcher(QObject):
         self._filter = _WatcherFilter(self)
         self._last_hash = ""
         self._last_time = 0.0
+        self._last_sequence = 0
+        self._last_message_at = time.monotonic()
+
+        self._poll = QTimer(self)
+        self._poll.setInterval(1000)
+        self._poll.timeout.connect(self._poll_once)
+
+    def _sequence(self) -> int:
+        """单独留一个方法，测试时不必去替换 ctypes 里的 Win32 函数。"""
+        return int(win32.user32.GetClipboardSequenceNumber())
 
     def start(self) -> None:
         if not self._filter_installed and self._app is not None:
             self._app.installNativeEventFilter(self._filter)
             self._filter_installed = True
+        # 暂停后恢复会再调一次 start，别把同一个窗口重复挂进监听链
+        if self._active:
+            return
         if win32.user32.AddClipboardFormatListener(self._hwnd):
             self._active = True
+            self._last_sequence = self._sequence()
+            self._last_message_at = time.monotonic()
+            self._poll.start()
 
     def stop(self) -> None:
+        self._poll.stop()
         if self._active:
             win32.user32.RemoveClipboardFormatListener(self._hwnd)
             self._active = False
@@ -348,10 +373,25 @@ class ClipboardWatcher(QObject):
             except (TypeError, ValueError):
                 return False, 0
             if msg.message == win32.WM_CLIPBOARDUPDATE and self._active:
+                self._last_message_at = time.monotonic()
                 self._on_update()
         return False, 0
 
+    def _poll_once(self) -> None:
+        """序号变了却没收到消息，说明那次通知丢了，补读一次。"""
+        if not self._active:
+            return
+        sequence = self._sequence()
+        if sequence == self._last_sequence:
+            return
+        self._last_sequence = sequence
+        now = time.monotonic()
+        if message_lost(self._last_message_at, now):
+            self._last_message_at = now
+            self._on_update()
+
     def _on_update(self) -> None:
+        self._last_sequence = self._sequence()
         # 自己写回剪贴板也会触发消息，靠所有者句柄判断，比布尔标记可靠
         if win32.user32.GetClipboardOwner() == self._hwnd:
             return
