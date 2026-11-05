@@ -112,6 +112,8 @@ class Application:
     def _on_capture(self, item: ClipItem) -> None:
         if self.config.paused:
             return
+        if filters.is_blocked_app(item.source_app, self.config.blocked_apps):
+            return
         if (
             self.config.strict_secret_filter
             and item.kind == KIND_TEXT

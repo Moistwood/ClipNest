@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QKeySequenceEdit,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
 from app import autostart
 from app.config import Config
 from core.exporter import ExportError, export_to_file, import_from_file
+from core.filters import parse_blocked_apps
 from core.repository import Repository
 from ui import theme
 
@@ -104,6 +106,16 @@ class SettingsDialog(QDialog):
         self._strict = QCheckBox("过滤疑似密钥、口令")
         self._strict.setChecked(self._config.strict_secret_filter)
         form.addRow("", self._strict)
+
+        self._blocked = QLineEdit()
+        self._blocked.setPlaceholderText("例如：wechat.exe, bank.exe")
+        self._blocked.setText(", ".join(self._config.blocked_apps))
+        form.addRow("不记录这些程序", self._blocked)
+
+        blocked_hint = QLabel("填进程名，用逗号分开；密码管理器已默认屏蔽，不用再填。")
+        blocked_hint.setObjectName("hint")
+        blocked_hint.setWordWrap(True)
+        form.addRow("", blocked_hint)
         return group
 
     def _build_app_group(self) -> QGroupBox:
@@ -212,7 +224,7 @@ class SettingsDialog(QDialog):
             QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 4px; }}
             QLabel {{ color: {pal.text_muted}; }}
             QLabel#hint {{ color: {pal.text_faint}; font-size: 11px; }}
-            QSpinBox, QKeySequenceEdit {{
+            QSpinBox, QKeySequenceEdit, QLineEdit {{
                 background: {pal.search_bg};
                 border: 1px solid {pal.divider};
                 border-radius: 6px;
@@ -243,6 +255,7 @@ class SettingsDialog(QDialog):
         self._config.max_items = self._max_items.value()
         self._config.max_days = self._max_days.value()
         self._config.strict_secret_filter = self._strict.isChecked()
+        self._config.blocked_apps = parse_blocked_apps(self._blocked.text())
         return self._config
 
     def accepted_changes(self) -> dict[str, object]:

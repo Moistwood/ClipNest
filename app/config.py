@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from app import paths
 
@@ -15,6 +15,8 @@ class Config:
     max_days: int = 7
     paused: bool = False
     strict_secret_filter: bool = False
+    # 用户自定义的「这些程序里复制的东西别记」，存进程名
+    blocked_apps: list[str] = field(default_factory=list)
     window_width: int = 800
     window_height: int = 520
     # 系统剪贴板的提示只弹一次，用户看过就不再打扰
@@ -34,8 +36,13 @@ class Config:
 
         config = cls()
         for field_name, default_value in asdict(config).items():
-            if field_name in raw and isinstance(raw[field_name], type(default_value)):
-                setattr(config, field_name, raw[field_name])
+            value = raw.get(field_name)
+            if not isinstance(value, type(default_value)):
+                continue
+            if field_name == "blocked_apps":
+                # 坏配置里混进数字或嵌套结构时，只留字符串
+                value = [entry for entry in value if isinstance(entry, str)]
+            setattr(config, field_name, value)
         return config
 
     def save(self) -> None:

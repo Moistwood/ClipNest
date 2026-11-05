@@ -56,11 +56,24 @@ def has_ignore_marker() -> bool:
     return False
 
 
-def is_blocked_app(app_name: str, extra: tuple[str, ...] = ()) -> bool:
+def parse_blocked_apps(text: str) -> list[str]:
+    """设置框里的一行文本拆成进程名列表，去重且保留书写顺序。"""
+    for separator in ("，", ";", "；", "\n", "\t"):
+        text = text.replace(separator, ",")
+    names: list[str] = []
+    for part in text.split(","):
+        name = part.strip().lower()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def is_blocked_app(app_name: str, extra: tuple[str, ...] | list[str] = ()) -> bool:
     if not app_name:
         return False
-    name = app_name.lower()
-    return name in DEFAULT_BLOCKED_APPS or name in {a.lower() for a in extra}
+    name = app_name.strip().lower()
+    custom = {str(entry).strip().lower() for entry in extra}
+    return name in DEFAULT_BLOCKED_APPS or name in custom
 
 
 def looks_like_secret(text: str) -> bool:
