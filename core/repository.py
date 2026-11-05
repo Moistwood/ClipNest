@@ -6,7 +6,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-from core.models import ClipItem
+from core.models import MAX_NOTE_CHARS, ClipItem
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS items (
@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS items (
     height        INTEGER NOT NULL DEFAULT 0,
     files_json    TEXT    NOT NULL DEFAULT '',
     source_app    TEXT    NOT NULL DEFAULT '',
+    note          TEXT    NOT NULL DEFAULT '',
     size          INTEGER NOT NULL DEFAULT 0,
     pinned        INTEGER NOT NULL DEFAULT 0,
     use_count     INTEGER NOT NULL DEFAULT 0,
@@ -47,8 +48,8 @@ RETURNING id
 INSERT_IF_ABSENT = """
 INSERT INTO items (kind, content_hash, preview, text_body, html_body, rtf_body,
                    image_path, width, height,
-                   files_json, source_app, size, pinned, use_count, created_at, last_used_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   files_json, source_app, note, size, pinned, use_count, created_at, last_used_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(content_hash) DO NOTHING
 RETURNING id
 """
@@ -105,7 +106,7 @@ class Repository:
     def _migrate(self) -> None:
         """给老数据库补列。CREATE TABLE IF NOT EXISTS 不会改已经存在的表结构。"""
         columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(items)")}
-        for column in ("html_body", "rtf_body"):
+        for column in ("html_body", "rtf_body", "note"):
             if column not in columns:
                 self._conn.execute(
                     f"ALTER TABLE items ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
@@ -169,6 +170,7 @@ class Repository:
                 item.height,
                 "\n".join(item.files),
                 item.source_app,
+                item.note,
                 item.size,
                 1 if item.pinned else 0,
                 item.use_count,
@@ -207,6 +209,7 @@ class Repository:
             id=row["id"],
             pinned=bool(row["pinned"]),
             use_count=row["use_count"],
+            note=row["note"],
         )
 
     def list(self, query: str = "", kind: str = "", limit: int = 100) -> list[ClipItem]:
@@ -249,6 +252,22 @@ class Repository:
         sql += " ORDER BY pinned DESC, last_used_at DESC LIMIT ?"
         params.append(limit)
         return [self._to_item(row) for row in self._conn.execute(sql, params)]
+
+    def favorites(self, limit: int = 0) -> list[ClipItem]:
+        sql = "SELECT * FROM items WHERE pinned = 1 ORDER BY last_used_at DESC"
+        rows = (
+            self._conn.execute(sql + " LIMIT ?", (limit,))
+            if limit > 0
+            else self._conn.execute(sql)
+        )
+        return [self._to_item(row) for row in rows]
+
+    def set_note(self, item_id: int, note: str) -> None:
+        """备注只在用户主动编辑时写，重复复制同一内容不会把它冲掉。"""
+        self._conn.execute(
+            "UPDATE items SET note = ? WHERE id = ?", (note[:MAX_NOTE_CHARS], item_id)
+        )
+        self._conn.commit()
 
     def get(self, item_id: int) -> ClipItem | None:
         row = self._conn.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()

@@ -13,6 +13,7 @@ MAX_TEXT_BYTES = 256 * 1024
 # 从浏览器复制一整页时 CF_HTML 能到几 MB，只留片段里合理的一部分
 MAX_RICH_BYTES = 512 * 1024
 PREVIEW_CHARS = 180
+MAX_NOTE_CHARS = 200
 
 
 @dataclass(slots=True)
@@ -36,6 +37,8 @@ class ClipItem:
     id: int = 0
     pinned: bool = False
     use_count: int = 0
+    # 收藏时自己写的名字或备注，普通历史条目留空
+    note: str = ""
 
     @property
     def kind_label(self) -> str:

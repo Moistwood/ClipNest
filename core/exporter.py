@@ -30,6 +30,7 @@ def _encode_item(item: ClipItem, include_images: bool) -> dict[str, object]:
         "width": item.width,
         "height": item.height,
         "source": item.source_app,
+        "note": item.note,
         "size": item.size,
         "created_at": item.created_at,
         "pinned": item.pinned,
@@ -60,6 +61,7 @@ def _decode_item(data: dict[str, object]) -> ClipItem:
         width=int(data.get("width") or 0),
         height=int(data.get("height") or 0),
         source_app=str(data.get("source") or ""),
+        note=str(data.get("note") or ""),
         size=int(data.get("size") or 0),
         created_at=float(data.get("created_at") or time.time()),
         pinned=bool(data.get("pinned")),
@@ -68,13 +70,19 @@ def _decode_item(data: dict[str, object]) -> ClipItem:
 
 
 def export_to_file(
-    repo: Repository, target: Path, include_images: bool = True, limit: int = 0
+    repo: Repository,
+    target: Path,
+    include_images: bool = True,
+    limit: int = 0,
+    favorites_only: bool = False,
 ) -> int:
-    items = repo.all_items(limit)
+    """favorites_only 只导出收藏项，导入端按同一格式处理，不另起版本号。"""
+    items = repo.favorites() if favorites_only else repo.all_items(limit)
     payload = {
         "app": FORMAT_NAME,
         "version": FORMAT_VERSION,
         "exported_at": time.time(),
+        "scope": "favorites" if favorites_only else "all",
         "count": len(items),
         "items": [_encode_item(item, include_images) for item in items],
     }
