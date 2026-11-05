@@ -10,6 +10,8 @@ KIND_IMAGE = "image"
 KIND_FILES = "files"
 
 MAX_TEXT_BYTES = 256 * 1024
+# 从浏览器复制一整页时 CF_HTML 能到几 MB，只留片段里合理的一部分
+MAX_RICH_BYTES = 512 * 1024
 PREVIEW_CHARS = 180
 
 
@@ -19,6 +21,10 @@ class ClipItem:
     content_hash: str = ""
     preview: str = ""
     text: str = ""
+    # 从浏览器 / Word 复制时剪贴板上同时有纯文本和带格式的版本，
+    # 两个都存下来，粘贴时才能还原成原来的样子。
+    html: str = ""
+    rtf: str = ""
     files: list[str] = field(default_factory=list)
     image_path: str = ""
     image_bytes: bytes | None = None

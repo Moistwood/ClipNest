@@ -11,6 +11,7 @@
 ## 它做什么
 
 - 后台记录你复制的**文本、图片、文件路径**，不打断任何操作
+- 从浏览器、Word 复制的文字会连同 HTML / RTF 一起保存，粘贴时还原原来的格式
 - 全局热键 `Ctrl+Alt+V` 呼出居中面板，键盘上下选、回车即粘贴
 - 支持搜索，中文可直接搜：三个字以上走 FTS5 trigram 索引，两个字自动降级成模糊匹配；老版本 SQLite 没有 trigram 时整体降级，功能不受影响
 - 重复内容自动去重并置顶
@@ -96,7 +97,7 @@ python -m nuitka --standalone --enable-plugin=pyside6 ^
 - **目标窗口以管理员身份运行时，粘贴注入会失效**（Windows 的 UIPI 隔离机制）。需要往管理员窗口粘贴时，ClipNest 自己也得提权运行。
 - 带有 `ExcludeClipboardContentFromMonitorProcessing` 标记的内容不会被记录，这是刻意行为。
 - 记录落盘和数据库写入在独立线程完成。清理过期记录、固定、删除这类低频写操作仍在主线程，两个 SQLite 连接靠 WAL 和 `busy_timeout` 错开。
-- 不记录富文本格式，HTML/RTF 会被降级成纯文本。
+- 富文本只保存剪贴板上那份 HTML / RTF 片段，片段里引用的外部图片和样式不会跟着存；预览区一律显示纯文本，格式只在粘贴时还原。
 
 ## 隐私
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import hashlib
+import re
 import struct
 import time
 from ctypes import wintypes
@@ -18,11 +19,23 @@ from core.models import (
     KIND_IMAGE,
     KIND_TEXT,
     MAX_TEXT_BYTES,
+    MAX_RICH_BYTES,
     ClipItem,
     make_preview,
 )
 
 _formats: dict[str, int] = {}
+
+# CF_HTML 的头部是 ASCII，四个数字是相对整块数据的字节偏移
+CF_HTML_TEMPLATE = (
+    "Version:0.9\r\n"
+    "StartHTML:{sh:010d}\r\n"
+    "EndHTML:{eh:010d}\r\n"
+    "StartFragment:{sf:010d}\r\n"
+    "EndFragment:{ef:010d}\r\n"
+)
+HTML_PREFIX = b"<html><body><!--StartFragment-->"
+HTML_SUFFIX = b"<!--EndFragment--></body></html>"
 
 
 def fmt(name: str) -> int:
@@ -66,6 +79,43 @@ def _read_text() -> str:
         return ""
     text = raw.decode("utf-16-le", "replace").rstrip("\x00")
     return text[:MAX_TEXT_BYTES]
+
+
+def _offset(header: str, name: str) -> int:
+    match = re.search(name + r":(\d+)", header)
+    return int(match.group(1)) if match else 0
+
+
+def _parse_cf_html(raw: bytes) -> str:
+    """从 CF_HTML 数据块里按头部偏移把片段切出来。"""
+    header = raw[:1024].decode("ascii", "ignore")
+    start = _offset(header, "StartFragment")
+    end = _offset(header, "EndFragment")
+    if not end or end < start or end > len(raw):
+        start, end = _offset(header, "StartHTML"), _offset(header, "EndHTML")
+    if not end or end < start or end > len(raw):
+        return ""
+    return raw[start:end].decode("utf-8", "replace").strip("\x00")[:MAX_RICH_BYTES]
+
+
+def _read_html() -> str:
+    """读剪贴板上的 CF_HTML。头部四个偏移是字节位置，片段通常是 UTF-8。"""
+    format_id = fmt("HTML Format")
+    if not format_id or not win32.user32.IsClipboardFormatAvailable(format_id):
+        return ""
+    raw = win32.global_bytes(win32.user32.GetClipboardData(format_id))
+    return _parse_cf_html(raw) if raw else ""
+
+
+def _read_rtf() -> str:
+    """RTF 本身是 ASCII 加 \\uN 转义，用 latin-1 存才能原样写回去。"""
+    format_id = fmt("Rich Text Format")
+    if not format_id or not win32.user32.IsClipboardFormatAvailable(format_id):
+        return ""
+    raw = win32.global_bytes(win32.user32.GetClipboardData(format_id))
+    if not raw:
+        return ""
+    return raw.split(b"\x00", 1)[0].decode("latin-1", "replace")[:MAX_RICH_BYTES]
 
 
 def _read_files() -> list[str]:
@@ -139,7 +189,13 @@ def read_clipboard(hwnd: int = 0) -> ClipItem | None:
         if win32.user32.IsClipboardFormatAvailable(win32.CF_UNICODETEXT):
             text = _read_text()
             if text.strip():
-                item = ClipItem(kind=KIND_TEXT, text=text, source_app=source)
+                item = ClipItem(
+                    kind=KIND_TEXT,
+                    text=text,
+                    html=_read_html(),
+                    rtf=_read_rtf(),
+                    source_app=source,
+                )
                 item.size = len(text.encode("utf-16-le"))
                 item.preview = make_preview(KIND_TEXT, text, [], 0, 0)
                 item.content_hash = _hash(KIND_TEXT, text.encode("utf-16-le"))
@@ -182,8 +238,33 @@ def _push(payloads: dict[int, bytes], hwnd: int = 0) -> bool:
         win32.user32.CloseClipboard()
 
 
-def write_text(text: str) -> bool:
-    return _push({win32.CF_UNICODETEXT: text.encode("utf-16-le") + b"\x00\x00"})
+def _cf_html_payload(fragment: str) -> bytes:
+    """把片段包成标准的 CF_HTML，填好四个字节偏移。"""
+    body = fragment.encode("utf-8")
+    blank = len(CF_HTML_TEMPLATE.format(sh=0, eh=0, sf=0, ef=0).encode("ascii"))
+    start_fragment = blank + len(HTML_PREFIX)
+    end_fragment = start_fragment + len(body)
+    end_html = end_fragment + len(HTML_SUFFIX)
+    header = CF_HTML_TEMPLATE.format(
+        sh=blank, eh=end_html, sf=start_fragment, ef=end_fragment
+    ).encode("ascii")
+    return header + HTML_PREFIX + body + HTML_SUFFIX
+
+
+def write_text(text: str, html: str = "", rtf: str = "") -> bool:
+    """纯文本打底，带格式的版本一并放上去，目标程序自己挑能认的。"""
+    payloads: dict[int, bytes] = {
+        win32.CF_UNICODETEXT: text.encode("utf-16-le") + b"\x00\x00"
+    }
+    if html:
+        format_id = fmt("HTML Format")
+        if format_id:
+            payloads[format_id] = _cf_html_payload(html)
+    if rtf:
+        format_id = fmt("Rich Text Format")
+        if format_id:
+            payloads[format_id] = rtf.encode("latin-1", "replace") + b"\x00"
+    return _push(payloads)
 
 
 def write_files(paths: list[str]) -> bool:

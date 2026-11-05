@@ -11,7 +11,7 @@ from core.models import KIND_IMAGE, ClipItem
 from core.repository import Repository
 
 FORMAT_NAME = "ClipNest"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 
 class ExportError(Exception):
@@ -24,6 +24,8 @@ def _encode_item(item: ClipItem, include_images: bool) -> dict[str, object]:
         "hash": item.content_hash,
         "preview": item.preview,
         "text": item.text,
+        "html": item.html,
+        "rtf": item.rtf,
         "files": item.files,
         "width": item.width,
         "height": item.height,
@@ -52,6 +54,8 @@ def _decode_item(data: dict[str, object]) -> ClipItem:
         content_hash=str(data.get("hash") or ""),
         preview=str(data.get("preview") or ""),
         text=str(data.get("text") or ""),
+        html=str(data.get("html") or ""),
+        rtf=str(data.get("rtf") or ""),
         files=[str(p) for p in files],
         width=int(data.get("width") or 0),
         height=int(data.get("height") or 0),

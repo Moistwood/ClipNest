@@ -12,7 +12,7 @@ from core.models import KIND_FILES, KIND_IMAGE, KIND_TEXT, ClipItem
 
 def copy_to_clipboard(item: ClipItem) -> bool:
     if item.kind == KIND_TEXT:
-        return clipboard.write_text(item.text)
+        return clipboard.write_text(item.text, item.html, item.rtf)
     if item.kind == KIND_FILES:
         return clipboard.write_files(item.files)
     if item.kind == KIND_IMAGE:

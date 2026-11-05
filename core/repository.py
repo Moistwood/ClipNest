@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS items (
     content_hash  TEXT    NOT NULL UNIQUE,
     preview       TEXT    NOT NULL DEFAULT '',
     text_body     TEXT    NOT NULL DEFAULT '',
+    html_body     TEXT    NOT NULL DEFAULT '',
+    rtf_body      TEXT    NOT NULL DEFAULT '',
     image_path    TEXT    NOT NULL DEFAULT '',
     width         INTEGER NOT NULL DEFAULT 0,
     height        INTEGER NOT NULL DEFAULT 0,
@@ -31,9 +33,10 @@ CREATE INDEX IF NOT EXISTS idx_items_kind   ON items(kind, last_used_at DESC);
 """
 
 UPSERT = """
-INSERT INTO items (kind, content_hash, preview, text_body, image_path, width, height,
+INSERT INTO items (kind, content_hash, preview, text_body, html_body, rtf_body,
+                   image_path, width, height,
                    files_json, source_app, size, pinned, use_count, created_at, last_used_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
 ON CONFLICT(content_hash) DO UPDATE SET
     last_used_at = excluded.last_used_at,
     use_count    = use_count + 1,
@@ -42,9 +45,10 @@ RETURNING id
 """
 
 INSERT_IF_ABSENT = """
-INSERT INTO items (kind, content_hash, preview, text_body, image_path, width, height,
+INSERT INTO items (kind, content_hash, preview, text_body, html_body, rtf_body,
+                   image_path, width, height,
                    files_json, source_app, size, pinned, use_count, created_at, last_used_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(content_hash) DO NOTHING
 RETURNING id
 """
@@ -94,8 +98,18 @@ class Repository:
         # 写入线程和主线程偶尔会同时抢写锁，等一下而不是直接抛 busy
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.executescript(SCHEMA)
+        self._migrate()
         self._conn.commit()
         self._fts_ready = self._setup_fts() if setup_index else False
+
+    def _migrate(self) -> None:
+        """给老数据库补列。CREATE TABLE IF NOT EXISTS 不会改已经存在的表结构。"""
+        columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(items)")}
+        for column in ("html_body", "rtf_body"):
+            if column not in columns:
+                self._conn.execute(
+                    f"ALTER TABLE items ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+                )
 
     def _setup_fts(self) -> bool:
         try:
@@ -122,6 +136,8 @@ class Repository:
                 item.content_hash,
                 item.preview,
                 item.text,
+                item.html,
+                item.rtf,
                 item.image_path,
                 item.width,
                 item.height,
@@ -146,6 +162,8 @@ class Repository:
                 item.content_hash,
                 item.preview,
                 item.text,
+                item.html,
+                item.rtf,
                 item.image_path,
                 item.width,
                 item.height,
@@ -177,6 +195,8 @@ class Repository:
             content_hash=row["content_hash"],
             preview=row["preview"],
             text=row["text_body"],
+            html=row["html_body"],
+            rtf=row["rtf_body"],
             files=[p for p in row["files_json"].split("\n") if p],
             image_path=row["image_path"],
             width=row["width"],

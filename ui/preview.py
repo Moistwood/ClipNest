@@ -50,8 +50,14 @@ class PreviewPane(QWidget):
         self._stack.addWidget(self._text)
         self._stack.addWidget(self._image)
 
+        self._format_note = QLabel("粘贴时会保留原始格式", self)
+        self._format_note.setFont(theme.font(8))
+        self._format_note.setStyleSheet(f"color: {self.pal.text_faint};")
+        self._format_note.hide()
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._format_note)
         layout.addWidget(self._stack)
 
         self._current: ClipItem | None = None
@@ -60,6 +66,7 @@ class PreviewPane(QWidget):
     def refresh_palette(self) -> None:
         self.pal = theme.current()
         self._empty.setStyleSheet(f"color: {self.pal.text_faint};")
+        self._format_note.setStyleSheet(f"color: {self.pal.text_faint};")
         self._text.setStyleSheet(
             f"background: transparent; color: {self.pal.text};"
             f" selection-background-color: {self.pal.accent}; border: none;"
@@ -68,6 +75,7 @@ class PreviewPane(QWidget):
 
     def show_item(self, item: ClipItem | None) -> None:
         self._current = item
+        self._format_note.setVisible(bool(item and (item.html or item.rtf)))
         if item is None:
             self._stack.setCurrentWidget(self._empty)
             return
