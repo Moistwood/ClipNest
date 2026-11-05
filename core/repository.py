@@ -57,6 +57,8 @@ class Repository:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
+        # 写入线程和主线程偶尔会同时抢写锁，等一下而不是直接抛 busy
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.executescript(SCHEMA)
         self._conn.commit()
 

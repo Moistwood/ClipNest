@@ -17,9 +17,10 @@ from app.single_instance import SingleInstance
 from core import filters, thumbnails
 from core.clipboard import ClipboardWatcher
 from core.hotkey import HotkeyManager
-from core.models import KIND_IMAGE, KIND_TEXT, ClipItem
+from core.models import KIND_TEXT, ClipItem
 from core.repository import Repository
 from core.stats import collect as collect_stats
+from core.storage_worker import StorageService
 from ui import theme
 from ui.palette import PaletteWindow
 from ui.settings_dialog import SettingsDialog
@@ -37,6 +38,8 @@ class Application:
 
         self.config = config
         self.repo = Repository(paths.db_path())
+        # 两个独立连接：主线程只读，工作线程负责落盘和写入
+        self.storage = StorageService(paths.db_path())
 
         self.host = QWidget()
         self.host.setWindowFlags(Qt.WindowType.Tool)
@@ -55,6 +58,8 @@ class Application:
 
     def _wire(self) -> None:
         self.watcher.captured.connect(self._on_capture)
+        self.storage.saved.connect(self._on_stored)
+        self.storage.failed.connect(self._on_storage_failed)
         self.hotkey.activated.connect(self.palette.popup)
 
         self.tray.show_requested.connect(self.palette.popup)
@@ -103,13 +108,16 @@ class Application:
             and filters.looks_like_secret(item.text)
         ):
             return
+        # 大图的落盘和 SQLite 事务都交给工作线程，这里立刻回到事件循环
+        self.storage.save(item)
 
-        if item.kind == KIND_IMAGE and item.image_bytes:
-            item.image_path = str(paths.save_blob(item.image_bytes, item.content_hash))
-            item.image_bytes = None
-
-        item.id = self.repo.add(item)
+    def _on_stored(self, _item: ClipItem) -> None:
         self._prune()
+        if self.palette.isVisible():
+            self.palette.reload()
+
+    def _on_storage_failed(self, message: str) -> None:
+        self._notify("有一条记录没保存下来", message)
 
     def _prune(self) -> None:
         for blob in self.repo.prune(self.config.max_items, self.config.max_days):
@@ -218,6 +226,7 @@ class Application:
     def _shutdown(self) -> None:
         self.watcher.stop()
         self.hotkey.unregister()
+        self.storage.shutdown()
         self.repo.close()
 
     def run(self) -> int:

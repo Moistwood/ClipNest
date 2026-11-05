@@ -94,7 +94,7 @@ python -m nuitka --standalone --enable-plugin=pyside6 ^
 
 - **目标窗口以管理员身份运行时，粘贴注入会失效**（Windows 的 UIPI 隔离机制）。需要往管理员窗口粘贴时，ClipNest 自己也得提权运行。
 - 带有 `ExcludeClipboardContentFromMonitorProcessing` 标记的内容不会被记录，这是刻意行为。
-- 数据库写入目前在主线程完成。文字复制无感知，超大图片可能有几十毫秒延迟。
+- 记录落盘和数据库写入在独立线程完成。清理过期记录、固定、删除这类低频写操作仍在主线程，两个 SQLite 连接靠 WAL 和 `busy_timeout` 错开。
 - 不记录富文本格式，HTML/RTF 会被降级成纯文本。
 
 ## 隐私
