@@ -59,7 +59,7 @@ Windows 10 1809 之后系统就自带剪贴板历史，按 `Win+V` 呼出。它�
 | 重启之后 | 全部清空，只有手动固定的能留下 | 保留，默认 7 天 |
 | 单条上限 | 4 MB，超过就不进历史 | 无此限制 |
 | 搜索 | 不支持，只能上下翻 | 全文搜索，中文可用 |
-| 类型筛选 | 无 | 文本 / 图片 / 文件 |
+| 类型筛选 | 无 | 文本 / 图片 / 文件 / 收藏 |
 | 文件路径 | 不记录 | 记录并可预览 |
 | 跨设备同步 | 开启后会把复制的文本加密上传到微软服务器 | 没有网络代码，数据不出本机 |
 
@@ -101,8 +101,9 @@ python -m unittest discover -s tests -v
 双击 `build.bat`：它会自动建虚拟环境、装依赖、编译，把主程序改名为 `ClipNest.exe`，并把 `LICENSE`、`README.md` 一起放进产物目录。手动编译则是：
 
 ```bash
-python -m nuitka --standalone --enable-plugin=pyside6 ^
-  --windows-console-mode=disable --output-dir=build run.py
+python -m nuitka --standalone --assume-yes-for-downloads ^
+  --enable-plugin=pyside6 --windows-console-mode=disable ^
+  --output-dir=build run.py
 ```
 
 产物在 `build\run.dist\`，整个目录一起分发（手编时主程序叫 `run.exe`）。推 `v*` 标签时 GitHub Actions 会自动打包并发布 Release。
@@ -111,7 +112,7 @@ python -m nuitka --standalone --enable-plugin=pyside6 ^
 
 - **目标窗口以管理员身份运行时，粘贴注入会失效**（Windows 的 UIPI 隔离机制）。需要往管理员窗口粘贴时，ClipNest 自己也得提权运行。
 - 带有 `ExcludeClipboardContentFromMonitorProcessing` 标记的内容不会被记录，这是刻意行为。
-- 记录落盘和数据库写入在独立线程完成。清理过期记录、固定、删除这类低频写操作仍在主线程，两个 SQLite 连接靠 WAL 和 `busy_timeout` 错开。
+- 记录落盘和数据库写入在独立线程完成。清理过期记录、收藏、删除这类低频写操作仍在主线程，两个 SQLite 连接靠 WAL 和 `busy_timeout` 错开。
 - 富文本只保存剪贴板上那份 HTML / RTF 片段，片段里引用的外部图片和样式不会跟着存；预览区一律显示纯文本，格式只在粘贴时还原。
 - **不做自动备份**，不额外占磁盘。收藏项不会被条数/天数清理，但也同样只存在这一份库里；真重要的内容请用「设置 → 数据 → 导出收藏夹」另存一份。
 - 启动时会对 `history.db` 做一次完整性检查。读不出来时把原文件连同 WAL/SHM 改名移到 `broken\`，再从空库重新开始，托盘会提示并写进 `clipnest.log`。坏文件只改名、不删除，可以自行取回。
@@ -132,7 +133,7 @@ ClipNest 没有任何网络代码。你可以用防火墙或者抓包工具验�
 └── clipnest.log    崩溃与异常日志
 ```
 
-卸载时直接删掉这个目录，不留任何残留。
+卸载时删掉这个目录即可清除全部记录；开机自启项记得先在设置里取消。
 
 ## 协议
 
