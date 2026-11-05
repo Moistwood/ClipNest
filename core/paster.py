@@ -10,8 +10,11 @@ from core import clipboard, win32
 from core.models import KIND_FILES, KIND_IMAGE, KIND_TEXT, ClipItem
 
 
-def copy_to_clipboard(item: ClipItem) -> bool:
+def copy_to_clipboard(item: ClipItem, plain: bool = False) -> bool:
     if item.kind == KIND_TEXT:
+        # 纯文本模式只放 CF_UNICODETEXT，目标程序就没有带格式的版本可挑
+        if plain:
+            return clipboard.write_text(item.text)
         return clipboard.write_text(item.text, item.html, item.rtf)
     if item.kind == KIND_FILES:
         return clipboard.write_files(item.files)
@@ -67,9 +70,9 @@ def wait_clipboard_ready(sequence_before: int, timeout: float = 0.25) -> bool:
     return False
 
 
-def paste(item: ClipItem) -> bool:
+def paste(item: ClipItem, plain: bool = False) -> bool:
     sequence_before = win32.user32.GetClipboardSequenceNumber()
-    if not copy_to_clipboard(item):
+    if not copy_to_clipboard(item, plain=plain):
         return False
     wait_clipboard_ready(sequence_before)
     time.sleep(0.015)

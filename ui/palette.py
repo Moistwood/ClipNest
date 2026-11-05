@@ -42,8 +42,12 @@ class SearchBox(QLineEdit):
             self.nav.emit("escape")
             return
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            control = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
-            self.nav.emit("copy" if control else "paste")
+            if modifiers & Qt.KeyboardModifier.ControlModifier:
+                self.nav.emit("copy")
+            elif modifiers & Qt.KeyboardModifier.ShiftModifier:
+                self.nav.emit("paste_plain")
+            else:
+                self.nav.emit("paste")
             return
         if key == Qt.Key.Key_Down:
             self.nav.emit("down")
@@ -184,7 +188,7 @@ class PaletteWindow(QWidget):
         layout.addLayout(body, 1)
 
         self._footer = QLabel(
-            "↑↓ 选择 · Enter 粘贴 · Ctrl+Enter 仅复制 · Ctrl+P 固定 · Del 删除 · Esc 关闭",
+            "↑↓ 选择 · Enter 粘贴 · Shift+Enter 纯文本 · Ctrl+Enter 仅复制 · Ctrl+P 固定 · Del 删除 · Esc 关闭",
             self._card,
         )
         self._footer.setFont(theme.font(8))
@@ -274,6 +278,8 @@ class PaletteWindow(QWidget):
             self.hide()
         elif action == "paste":
             self._commit(only_copy=False)
+        elif action == "paste_plain":
+            self._commit(only_copy=False, plain=True)
         elif action == "copy":
             self._commit(only_copy=True)
         elif action in ("up", "down"):
@@ -294,7 +300,7 @@ class PaletteWindow(QWidget):
             self._list.setCurrentIndex(self._model.index(position - 1, 0))
             self._commit(only_copy=False)
 
-    def _commit(self, only_copy: bool) -> None:
+    def _commit(self, only_copy: bool, plain: bool = False) -> None:
         item = self._selected()
         if item is None:
             return
@@ -302,10 +308,14 @@ class PaletteWindow(QWidget):
         self.hide()
         if target:
             win32.user32.SetForegroundWindow(target)
-        QTimer.singleShot(70, lambda: self._deliver(item, only_copy))
+        QTimer.singleShot(70, lambda: self._deliver(item, only_copy, plain))
 
-    def _deliver(self, item: ClipItem, only_copy: bool) -> None:
-        ok = paster.copy_to_clipboard(item) if only_copy else paster.paste(item)
+    def _deliver(self, item: ClipItem, only_copy: bool, plain: bool = False) -> None:
+        ok = (
+            paster.copy_to_clipboard(item, plain=plain)
+            if only_copy
+            else paster.paste(item, plain=plain)
+        )
         if ok:
             self._repo.touch(item.id)
             self.pasted.emit(item)
@@ -316,7 +326,8 @@ class PaletteWindow(QWidget):
             self.hide()
             return
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            self._commit(only_copy=False)
+            shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            self._commit(only_copy=False, plain=shift)
             return
         if key == Qt.Key.Key_Delete:
             item = self._selected()
