@@ -127,14 +127,17 @@ class SettingsDialog(QDialog):
         buttons.setSpacing(8)
         export_button = QPushButton("导出为 JSON")
         import_button = QPushButton("从 JSON 导入")
+        favorites_button = QPushButton("导出收藏夹")
         export_button.clicked.connect(self._on_export)
         import_button.clicked.connect(self._on_import)
+        favorites_button.clicked.connect(self._on_export_favorites)
         buttons.addWidget(export_button)
         buttons.addWidget(import_button)
+        buttons.addWidget(favorites_button)
         buttons.addStretch(1)
         layout.addLayout(buttons)
 
-        hint = QLabel("导入时按内容去重，重复的条目直接跳过，不会改动已有记录。")
+        hint = QLabel("导入时按内容去重。导出收藏夹只写收藏项，图片会一起打包。")
         hint.setObjectName("hint")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -155,6 +158,27 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "导出失败", str(exc))
             return
         QMessageBox.information(self, "导出完成", f"共导出 {count} 条记录。")
+
+    def _on_export_favorites(self) -> None:
+        if self._repo is None:
+            return
+        if not self._repo.favorites():
+            QMessageBox.information(self, "收藏夹是空的", "先按 Ctrl+P 把内容加进收藏夹。")
+            return
+        suggested = time.strftime("clipnest-favorites-%Y%m%d-%H%M.json")
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "导出收藏夹", suggested, "JSON 文件 (*.json)"
+        )
+        if not path:
+            return
+        try:
+            count = export_to_file(self._repo, Path(path), favorites_only=True)
+        except ExportError as exc:
+            QMessageBox.warning(self, "导出失败", str(exc))
+            return
+        QMessageBox.information(
+            self, "导出完成", f"共导出 {count} 条收藏，图片已一并打包。"
+        )
 
     def _on_import(self) -> None:
         if self._repo is None:
