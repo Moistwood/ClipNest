@@ -8,6 +8,16 @@
 |---|---|
 | ![浅色](docs/screenshots/light.png) | ![深色](docs/screenshots/dark.png) |
 
+## 直接用（不需要装 Python）
+
+Releases 里有打包好的 `ClipNest-*-win64.zip` 时，解压到任意文件夹，双击 `ClipNest.exe`。程序不弹窗口，只在任务栏托盘出现图标：按 `Ctrl+Alt+V` 呼出历史，选中后 `Enter` 粘贴，`Esc` 收起。
+
+第一次用建议先在托盘 →「设置…」里确认热键、勾选开机自启。zip 里附带 `LICENSE` 和 `README.md`。
+
+暂时没有打包版的话，按下面的「打包」双击 `build.bat` 自己生成一份，或者按「从源码运行」直接跑源码。
+
+卸载：托盘 →「退出」，在设置里取消开机自启，再删掉解压目录；历史数据在 `%APPDATA%\ClipNest`，要删之前先用「设置 → 数据」导出需要的内容。
+
 ## 它做什么
 
 - 后台记录你复制的**文本、图片、文件路径**，不打断任何操作；系统通知偶尔丢失时会靠剪贴板序号补读一次
@@ -62,9 +72,9 @@ Windows 10 1809 之后系统就自带剪贴板历史，按 `Win+V` 呼出。它�
 ## 环境要求
 
 - Windows 10 1809 及以上
-- Python 3.11+（仅源码运行需要）
+- 打包版不需要 Python；源码运行需要 Python 3.11+
 
-## 本地运行
+## 从源码运行
 
 ```bash
 git clone <本项目仓库地址>
@@ -88,14 +98,14 @@ python -m unittest discover -s tests -v
 
 ## 打包
 
-双击 `build.bat`，或者手动：
+双击 `build.bat`：它会自动建虚拟环境、装依赖、编译，把主程序改名为 `ClipNest.exe`，并把 `LICENSE`、`README.md` 一起放进产物目录。手动编译则是：
 
 ```bash
 python -m nuitka --standalone --enable-plugin=pyside6 ^
   --windows-console-mode=disable --output-dir=build run.py
 ```
 
-产物在 `build\run.dist\`，整个目录一起分发。推 `v*` 标签时 GitHub Actions 会自动打包并发布 Release。
+产物在 `build\run.dist\`，整个目录一起分发（手编时主程序叫 `run.exe`）。推 `v*` 标签时 GitHub Actions 会自动打包并发布 Release。
 
 ## 已知限制
 

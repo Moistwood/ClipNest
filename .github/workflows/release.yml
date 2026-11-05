@@ -38,6 +38,12 @@ jobs:
           --output-dir=build
           run.py
 
+      - name: 整理产物
+        run: |
+          Rename-Item build\run.dist\run.exe ClipNest.exe
+          Copy-Item LICENSE build\run.dist\
+          Copy-Item README.md build\run.dist\
+
       - name: 压缩产物
         run: Compress-Archive -Path build\run.dist\* -DestinationPath ClipNest-${{ github.ref_name }}-win64.zip
 
